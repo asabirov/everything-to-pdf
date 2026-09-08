@@ -38,14 +38,35 @@ failure; a killed process may leave a `.html-to-pdf-*.pdf` file that can be dele
 
 ## Theme and layout
 
-Copy [assets/design-system.md](assets/design-system.md) to your project, edit its
-complete JSON token block, and use `--theme /path/to/design-system.md`. That file
-is the schema reference and includes the default Sand palette. Its Markdown prose
-is author guidance, not rendered content. No Markdown/YAML parser is needed.
+Theme selection is authoring-time guidance in [SKILL.md](SKILL.md): explicit user
+theme first, then the relevant project's design system, then the bundled Geist
+print fallback. Discovery is bounded to project instructions/referenced files,
+obvious local sources (root design/token files and a known styles folder), and the
+available skill catalog; it does not recursively crawl the project. Optional design skills such as `lessly-design`
+(`lessly:design` / Lessly plugin `design`) and `apliteni-design` apply only to their
+matching project/brand; none is required. Use relevant print/light guidance and
+report missing explicitly requested sources instead of silently falling back.
+
+Copy [assets/design-system.md](assets/design-system.md) into the user's project,
+adapt the design tokens once into its complete JSON schema, record the source and
+print choices in its prose, then reuse it with `--theme /path/to/design-system.md`.
+An explicit compatible theme can be used directly. The default file cites official
+Vercel Geist light sRGB colors and separates them from this skill's print adaptations;
+it is not a full Geist component or typography implementation. The CLI performs no
+design-system discovery, network lookup, or font download. Without `--theme` it
+always uses the bundled fallback. Markdown prose is author guidance, not rendered
+content; no Markdown/YAML parser or new runtime dependency is needed.
 Unknown, duplicate, unsafe or malformed tokens fail before output replacement.
 The same inputs and environment follow the same rules; byte-for-byte reproducibility
 across platforms or renderer/font upgrades is not promised. This pins the renderer,
 not its transitive dependencies or system fonts.
+
+The JSON `typography.family` accepts only `sans-serif`, `serif`, or `monospace`.
+For actual brand fonts, retain or add source CSS or a linked local stylesheet with
+`@font-face` and the appropriate `font-family`. Stage existing font assets you are
+permitted to use under the input HTML's resolved parent directory, alongside any
+required local stylesheets; remote font URLs are blocked. Disclose missing fonts
+and any fallback used instead of claiming brand typography fidelity.
 
 Source author CSS has normal precedence over the skill's user-origin defaults.
 Use an inline style or a linked local stylesheet for custom CSS; there is no separate
