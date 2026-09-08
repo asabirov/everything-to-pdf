@@ -50,11 +50,17 @@ class Rendering(unittest.TestCase):
 
     def test_theme_geometry_and_invalid_theme_preserve_pdf(self):
         default = (ROOT / 'assets/design-system.md').read_text()
-        self.run_cli('<h1>Theme sample</h1><p>Preserved content</p>')
+        self.run_cli('<h1>Theme sample</h1><p>Preserved content</p><small>Secondary</small>')
         with pymupdf.open(self.pdf) as doc:
             original_width = doc[0].rect.width
+            spans = [s for b in doc[0].get_text('dict')['blocks'] if 'lines' in b
+                     for line in b['lines'] for s in line['spans']]
+            self.assertEqual({s['text']: s['color'] for s in spans if s['text'] in
+                              ('Theme sample', 'Preserved content', 'Secondary')},
+                             {'Theme sample': 0x171717, 'Preserved content': 0x171717,
+                              'Secondary': 0x4D4D4D})
         theme = self.home / 'theme.md'
-        theme.write_text(default.replace('"A4"', '"Letter"').replace('#586348', '#AA2233'))
+        theme.write_text(default.replace('"A4"', '"Letter"').replace('"accent": "#171717"', '"accent": "#AA2233"'))
         self.run_cli('<h1>Theme sample</h1>', '--theme', theme)
         with pymupdf.open(self.pdf) as doc:
             self.assertNotEqual(doc[0].rect.width, original_width)
@@ -62,7 +68,7 @@ class Rendering(unittest.TestCase):
                       for line in b['lines'] for s in line['spans']]
             self.assertIn(0xAA2233, colors)
         example = (ROOT / 'examples/monthly-finops.html').read_text()
-        theme.write_text(default.replace('#F3F1EA', '#112233').replace('#DCDCD2', '#CC4455'))
+        theme.write_text(default.replace('#F2F2F2', '#112233').replace('#EBEBEB', '#CC4455'))
         for override in ('', '<style>.metrics td {background: #223344} .rule {border-color: #556677}</style>'):
             self.run_cli(example + override, '--theme', theme)
             with pymupdf.open(self.pdf) as doc:

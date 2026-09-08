@@ -8,6 +8,30 @@ deterministic converter once; there is no LLM rendering loop or JavaScript engin
 For new documents, use semantic headings, paragraphs, tables with `thead`, and
 local images. Headings supply PDF bookmarks; print CSS helps pagination.
 
+Choose the theme before rendering: **explicit user theme > relevant project design
+system > bundled Geist print fallback**. At authoring time, check project instructions
+and their referenced design/token files. Also inspect obvious project-local sources
+even if unreferenced: root `DESIGN.md`, `design-system.md`, token files, and files
+directly inside a known styles folder. Keep this a bounded check, not a recursive
+search. Then check the available skill catalog for a matching brand. Read only the
+relevant skill and its linked color, type and print references; do not crawl the
+filesystem or load unrelated skills. Optional matches
+include `lessly-design` (also `lessly:design` / Lessly plugin `design`) and
+`apliteni-design`; check the actual name and project/brand before using either.
+Prefer the system's print/light guidance over a dark web default. If an explicitly
+requested theme/system is unavailable or ambiguous, report that and ask for the
+missing source or choice; do not silently substitute Geist. If no relevant project
+system is found, use the fallback and say so.
+
+Adapt a selected design system once into a theme file in the user's project: copy
+[assets/design-system.md](assets/design-system.md), map the project's tokens into
+its complete JSON schema, retain suitable print defaults for unspecified values,
+and record the source and print adaptations in the prose. Pass that file with
+`--theme`; reuse it on subsequent renders. A requested theme already in this schema
+can be passed directly. Discovery and adaptation are agent authoring work: the CLI
+only reads the supplied theme or bundled fallback, offline, without skill imports,
+font downloads or additional dependencies. Preserve existing source CSS.
+
 Use an existing external Python environment with [requirements.txt](requirements.txt)
 installed. First-run system dependencies and venv setup are in [README.md](README.md).
 Use the README’s default venv below, or substitute an existing compatible environment.
