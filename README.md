@@ -3,8 +3,8 @@
 A small agent skill and deterministic CLI for local static HTML → PDF, using
 WeasyPrint 69.0 and a minimalist, themeable print stylesheet. It keeps the supplied
 HTML intact; it does not summarize content, run JavaScript, capture browser pages,
-or operate an LLM rendering loop. It does not promise arbitrary browser CSS fidelity
-or PDF/UA conformance.
+edit existing PDFs, or operate an LLM rendering loop. It does not promise arbitrary
+browser CSS fidelity or PDF/UA conformance.
 
 ## Install and run
 
@@ -29,8 +29,9 @@ mkdir -p /path/to/output
 ```
 
 Run the synthetic example using `examples/monthly-finops.html` as input. The CLI
-prints the page count and output path, compact warnings to stderr, and exits 0 on success or 1 on
-render/validation failure (2 for CLI syntax). The output directory must already
+prints the page count and complete JSON-escaped output path, compact warnings to
+stderr, and exits 0 on success or 1 on render/validation failure (2 for CLI syntax).
+The output directory must already
 exist. Output is replaced atomically from a temporary file in the same directory;
 failed renders leave any prior PDF intact. Temporary files are removed on ordinary
 failure; a killed process may leave a `.html-to-pdf-*.pdf` file that can be deleted.
@@ -57,7 +58,8 @@ not supported. Font availability affects rendering and glyph coverage.
 
 ## Resources and trust boundary
 
-Files resolve relative to the HTML file (and linked stylesheets relative to themselves).
+Files resolve relative to the real HTML file (and linked stylesheets relative to themselves).
+For a symlinked input, assets belong beside its target, not beside the symlink.
 Only regular files inside the resolved HTML parent directory and embedded `data:`
 resources are allowed; network/remote-file resources and escaping symlinks fail.
 Move shared assets into that source tree instead of broadening permissions. Fetch

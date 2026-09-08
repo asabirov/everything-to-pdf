@@ -1,6 +1,6 @@
 ---
 name: html-to-pdf
-description: Use when converting local static HTML into a themed, paginated PDF with WeasyPrint. Supports reports and documents; excludes JavaScript-driven pages and browser screenshot capture.
+description: Use when converting local static HTML into a themed, paginated PDF with WeasyPrint. Supports reports and documents; excludes JavaScript-driven pages, browser screenshot capture, and editing existing PDFs.
 ---
 
 Convert the user's HTML without rewriting or summarizing its content. Run the
@@ -10,11 +10,12 @@ local images. Headings supply PDF bookmarks; print CSS helps pagination.
 
 Use an existing external Python environment with [requirements.txt](requirements.txt)
 installed. First-run system dependencies and venv setup are in [README.md](README.md).
+Use the README’s default venv below, or substitute an existing compatible environment.
 From the skill directory:
 
 ```sh
-/path/to/venv/bin/python scripts/render.py INPUT.html OUTPUT.pdf
-/path/to/venv/bin/python scripts/render.py INPUT.html OUTPUT.pdf --theme /path/to/design-system.md
+~/.local/share/html-to-pdf/venv/bin/python scripts/render.py INPUT.html OUTPUT.pdf
+~/.local/share/html-to-pdf/venv/bin/python scripts/render.py INPUT.html OUTPUT.pdf --theme /path/to/design-system.md
 ```
 
 The output directory must exist. Store inputs, output, themes, venvs and inspection
@@ -24,9 +25,10 @@ block controls the print defaults. Author HTML/CSS retains normal cascade preced
 Keep custom document CSS in the source or a linked local stylesheet.
 
 Resources must be embedded data URIs or files inside the input's resolved parent
-directory, including nested folders. Copy required assets there; network fetches,
+directory, including nested folders. For a symlinked input, assets belong beside
+the real HTML file, not beside the symlink. Copy required assets there; network fetches,
 parent traversal and symlinks escaping that root fail. Normal external hyperlinks
-remain links and are not fetched. On failure, fix the reported resource/theme/input
+remain links and are not fetched. On failure, fix the reported resource/theme/input/output
 problem and rerun; an existing output survives. Warnings may indicate unsupported CSS.
 
 Verify the delivered PDF's text and page count and inspect rendered pages for clipping

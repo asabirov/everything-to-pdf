@@ -28,3 +28,8 @@ Size is 8–18 pt, line height 1.1–2, block spacing 1–12 mm, cell padding 1�
 Page size is `A4` or `Letter`; margin is a uniform 10–35 mm. Numbers are JSON
 numbers, without units. These constrained values cannot inject CSS or URLs.
 Source author CSS can override these user-origin defaults through the CSS cascade.
+
+Validated colors are exported on `:root` as `--color-text`, `--color-muted`,
+`--color-accent`, `--color-surface`, and `--color-border`. Use `var(--color-surface)`
+for custom component backgrounds and `var(--color-border)` for rules, as the
+bundled example does. Author CSS can override these properties or component styles.

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Render trusted local static HTML with a validated print theme."""
 import argparse
+from contextlib import contextmanager
+import errno
 import json
 import logging
 import os
@@ -62,7 +64,9 @@ def theme_css(path):
     ):
         if type(value) not in (int, float) or not low <= value <= high:
             raise RenderError(f'theme {label} must be a number from {low} to {high}')
+    properties = '; '.join(f'--color-{key}: {value}' for key, value in c.items())
     return f'''
+:root {{ {properties}; }}
 @page {{ size: {p['size']}; margin: {p['margin_mm']}mm;
   @bottom-right {{ content: counter(page); color: {c['muted']}; font-size: 8pt; }} }}
 html {{ font-family: {t['family']}; font-size: {t['size_pt']}pt;
@@ -78,6 +82,24 @@ th, blockquote {{ background: {c['surface']}; }}
 def compact(value):
     text = re.sub(r'data:[^\s\"\']+', '[embedded resource]', str(value))
     return ' '.join(text.split())[:160]
+
+
+@contextmanager
+def filesystem(role, path):
+    """Identify the failed operation without exposing unbounded OS diagnostics."""
+    try:
+        yield
+    except OSError as error:
+        failed = Path(error.filename2 or error.filename or path)
+        if role == 'output' and failed.name.startswith('.html-to-pdf-'):
+            failed = failed.parent
+        label = str(failed.absolute())
+        if len(label) > 240:
+            label = label[:80] + '…' + label[-159:]
+        reason = ('missing file or directory' if isinstance(error, FileNotFoundError)
+                  else 'permission denied' if isinstance(error, PermissionError)
+                  else compact(error.strerror or type(error).__name__))
+        raise RenderError(f'{role} {json.dumps(label)}: {reason}') from None
 
 
 class Diagnostics(logging.Handler):
@@ -107,13 +129,18 @@ def render(source, output, theme):
     from weasyprint import CSS, HTML
     from weasyprint.urls import URLFetcher
 
-    source = source.resolve(strict=True)
-    output = output.absolute()
-    if not source.is_file():
-        raise RenderError('input must be a local HTML file')
-    if output.resolve() in (source, theme.resolve()):
-        raise RenderError('output must not replace input or theme')
-    css = theme_css(theme)
+    with filesystem('input', source):
+        source = source.resolve(strict=True)
+        if not source.is_file():
+            reason = 'is a directory' if source.is_dir() else 'not a regular HTML file'
+            raise OSError(errno.EINVAL, reason, str(source))
+    with filesystem('theme', theme):
+        theme = theme.resolve(strict=True)
+        css = theme_css(theme)
+    with filesystem('output', output):
+        output = output.absolute()
+        if output.resolve() in (source, theme):
+            raise RenderError('output must not replace input or theme')
     root = source.parent
 
     class LocalFetcher(URLFetcher):
@@ -163,8 +190,9 @@ def render(source, output, theme):
     try:
         styles = [CSS(string=(ROOT / 'assets/print.css').read_text(encoding='utf-8')),
                   CSS(string=css)]
-        document = HTML(filename=str(source), url_fetcher=fetcher).render(stylesheets=styles)
-        with tempfile.NamedTemporaryFile(prefix='.html-to-pdf-', suffix='.pdf',
+        with filesystem('input', source):
+            document = HTML(filename=str(source), url_fetcher=fetcher).render(stylesheets=styles)
+        with filesystem('output', output), tempfile.NamedTemporaryFile(prefix='.html-to-pdf-', suffix='.pdf',
                                          dir=output.parent, delete=False) as handle:
             temp = Path(handle.name)
             document.write_pdf(handle)
@@ -172,7 +200,8 @@ def render(source, output, theme):
             os.fsync(handle.fileno())
         if fetcher.failed or diagnostics.errors:
             raise RenderError('render failed: resource or renderer errors; prior output preserved')
-        os.replace(temp, output)
+        with filesystem('output', output):
+            os.replace(temp, output)
         temp = None
         return len(document.pages)
     finally:
@@ -195,12 +224,12 @@ def main():
         print(f'error: {error}', file=sys.stderr)
         return 1
     except (OSError, ValueError, ImportError) as error:
-        print(f'error: {type(error).__name__}; check paths, permissions, and runtime installation', file=sys.stderr)
+        print(f'error: runtime {type(error).__name__}; check runtime installation', file=sys.stderr)
         return 1
     except Exception as error:
         print(f'error: renderer failed ({type(error).__name__}); prior output preserved', file=sys.stderr)
         return 1
-    print(f'rendered {pages} page(s): {compact(args.output.absolute())}')
+    print(f'rendered {pages} page(s): {json.dumps(str(args.output.absolute()))}')
     return 0
 
 
