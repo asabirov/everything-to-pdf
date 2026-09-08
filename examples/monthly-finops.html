@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Northstar — August 2026 cloud economics</title>
+<style>
+.kicker { text-transform: uppercase; letter-spacing: 0.16em; font-size: 8pt; margin-bottom: 5mm; }
+.subtitle { font-size: 14pt; max-width: 145mm; }
+.rule { border-top: 0.5mm solid #DCDCD2; padding-top: 4mm; }
+.metrics { margin: 8mm 0; }
+.metrics td { width: 33.33%; border: 0; background: #F3F1EA; padding: 5mm; }
+.metric { display: block; font-size: 24pt; font-weight: bold; line-height: 1.2; }
+.label { display: block; font-size: 8pt; margin-top: 2mm; }
+.number { text-align: right; font-variant-numeric: tabular-nums; }
+.note { font-size: 8pt; }
+</style>
+</head>
+<body>
+<p class="kicker muted">Northstar / Cloud economics / 08.2026</p>
+<h1>More work.<br>Less waste.</h1>
+<p class="subtitle">August cloud spend fell 6.4% while completed jobs grew 12%. The savings came from idle capacity, not reduced service.</p>
+<p class="muted rule">Monthly FinOps review · Prepared 8 September 2026<br>Synthetic company and data · USD, excluding tax</p>
+<table class="metrics" aria-label="Monthly indicators"><tr>
+<td><span class="metric">$84,240</span><span class="label">CLOUD SPEND · −6.4% MONTH ON MONTH</span></td>
+<td><span class="metric">$0.075</span><span class="label">COST PER JOB · −16.4%</span></td>
+<td><span class="metric">98.2%</span><span class="label">SPEND WITH AN OWNER</span></td>
+</tr></table>
+<h2>01 / The decision</h2>
+<p>Approve a two-week trial of scheduled development clusters in September. Engineering can recover an estimated $2,100 per month without changing production capacity. Keep commitment purchases on hold until the seasonal traffic review.</p>
+<blockquote><strong>Guardrail:</strong> preserve the 99.9% availability objective and p95 job latency below 45 seconds. Stop the trial if either measure deteriorates.</blockquote>
+<h2>02 / What moved</h2>
+<table>
+<caption>August versus July · spend by platform</caption>
+<thead><tr><th>Platform</th><th class="number">July</th><th class="number">August</th><th class="number">Change</th></tr></thead>
+<tbody>
+<tr><td>Compute</td><td class="number">$48,400</td><td class="number">$43,120</td><td class="number">−10.9%</td></tr>
+<tr><td>Data services</td><td class="number">$25,800</td><td class="number">$26,440</td><td class="number">+2.5%</td></tr>
+<tr><td>Storage</td><td class="number">$9,600</td><td class="number">$9,180</td><td class="number">−4.4%</td></tr>
+<tr><td>Network</td><td class="number">$6,200</td><td class="number">$5,500</td><td class="number">−11.3%</td></tr>
+<tr><td><strong>Total</strong></td><td class="number"><strong>$90,000</strong></td><td class="number"><strong>$84,240</strong></td><td class="number"><strong>−6.4%</strong></td></tr>
+</tbody></table>
+<p>Compute rightsizing removed $5,280 of monthly cost. Data services rose $640 after the analytics retention extension; this increase has an owner and an agreed business purpose.</p>
+<h2>03 / Efficiency, with context</h2>
+<p>Completed jobs increased from 1.00 million to 1.12 million. Dividing total spend by completed jobs gives $0.090 in July and $0.0752 in August. The 16.4% improvement is directional: job complexity and customer mix also changed.</p>
+<p>Availability was 99.96% and p95 latency was 38 seconds in August, compared with 99.95% and 39 seconds in July. These observations support continuing the trial; they do not establish causation.</p>
+<h2>04 / September actions</h2>
+<table>
+<caption>Accountable owners and observable completion</caption>
+<thead><tr><th>Action</th><th>Owner / due</th><th>Evidence of completion</th></tr></thead>
+<tbody>
+<tr><td>Schedule development clusters</td><td>Platform / 18 Sep</td><td>Two weeks of off-hours shutdown logs; latency and availability within guardrails.</td></tr>
+<tr><td>Resolve unallocated spend</td><td>FinOps / 15 Sep</td><td>Assign the remaining $1,516 to a team and cost center.</td></tr>
+<tr><td>Review analytics retention</td><td>Data / 22 Sep</td><td>Document the 90-day retention value and a lower-cost archive option.</td></tr>
+<tr><td>Reassess commitments</td><td>Finance / 30 Sep</td><td>Compare three demand scenarios before approving any purchase.</td></tr>
+</tbody></table>
+<h2>05 / Forecast and watchpoints</h2>
+<p>September planning assumes the current workload mix and no new commitments. A $83,000–$88,000 range covers the expected traffic variation; it is a planning scenario, not a statistical confidence interval. Trial savings are excluded until measured.</p>
+<p>Watch cross-region transfer during the recovery exercise and database storage after the retention change. Each should be reviewed against its operational purpose before reducing spend.</p>
+<h2>06 / Basis of preparation</h2>
+<p>All figures are fabricated for this example. Monthly platform totals include shared services; cost per job uses the same total spend numerator in both months. Percent changes use July as the denominator and are rounded to one decimal place.</p>
+<p class="note muted rule">End of report · Northstar synthetic monthly review<br>Prepared for a decision, with assumptions visible.</p>
+</body>
+</html>
