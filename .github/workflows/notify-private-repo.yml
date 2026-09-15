@@ -1,0 +1,37 @@
+name: notify private-repo
+
+# Installed in each tracked skill repository by
+# scripts/rollout_pin_sync_sender.py. A merge to the default branch tells
+# private-repo to move this skill's submodule pin (asabirov/private-repo#197).
+#
+# CLAUDE_2_DISPATCH_TOKEN is a fine-grained PAT with Contents: write on
+# asabirov/private-repo and nothing else. It is not the receiver's PIN_SYNC_TOKEN and
+# needs no access to this repository.
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: notify-private-repo
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    name: Dispatch the merged commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tell private-repo which commit was merged
+        env:
+          GH_TOKEN: ${{ secrets.CLAUDE_2_DISPATCH_TOKEN }}
+          SKILL_REPOSITORY: ${{ github.repository }}
+          MERGED_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          gh api repos/asabirov/private-repo/dispatches \
+            --method POST \
+            --field event_type=skill-merged \
+            --field "client_payload[repository]=${SKILL_REPOSITORY}" \
+            --field "client_payload[sha]=${MERGED_SHA}"
