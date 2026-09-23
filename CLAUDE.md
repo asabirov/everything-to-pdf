@@ -18,6 +18,6 @@ macOS; the deleted workflow installed the Debian equivalents on its runner.
 
 It must exit 0. Last verified on a macOS controller: Ran 3 tests in 18.1s, OK.
 
-The rule this follows, and why, is [`ci-rule.md`](https://github.com/asabirov/asabirov/blob/main/ci-rule.md)
-in `asabirov/asabirov`. Nothing stops a broken commit reaching `main` here — the
+The rule this follows, and why, is [`ci-rule.md`](https://github.com/private-repo/blob/main/ci-rule.md)
+in `private-repo`. Nothing stops a broken commit reaching `main` here — the
 suite is the only gate, so run it.
