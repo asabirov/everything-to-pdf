@@ -2,10 +2,10 @@ name: notify claude-2
 
 # Installed in each tracked skill repository by
 # scripts/rollout_pin_sync_sender.py. A merge to the default branch tells
-# claude-2 to move this skill's submodule pin (asabirov/claude-2#197).
+# agents-home to move this skill's submodule pin (asabirov/agents-home#197).
 #
 # CLAUDE_2_DISPATCH_TOKEN is a fine-grained PAT with Contents: write on
-# asabirov/claude-2 and nothing else. It is not the receiver's PIN_SYNC_TOKEN and
+# asabirov/agents-home and nothing else. It is not the receiver's PIN_SYNC_TOKEN and
 # needs no access to this repository.
 
 on:
@@ -23,14 +23,14 @@ jobs:
     name: Dispatch the merged commit
     runs-on: ubuntu-latest
     steps:
-      - name: Tell claude-2 which commit was merged
+      - name: Tell agents-home which commit was merged
         env:
           GH_TOKEN: ${{ secrets.CLAUDE_2_DISPATCH_TOKEN }}
           SKILL_REPOSITORY: ${{ github.repository }}
           MERGED_SHA: ${{ github.sha }}
         run: |
           set -eu
-          gh api repos/asabirov/claude-2/dispatches \
+          gh api repos/asabirov/agents-home/dispatches \
             --method POST \
             --field event_type=skill-merged \
             --field "client_payload[repository]=${SKILL_REPOSITORY}" \
