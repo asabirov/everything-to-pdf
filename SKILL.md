@@ -1,6 +1,8 @@
 ---
 name: html-to-pdf
 description: Use when converting local static HTML into a themed, paginated PDF with WeasyPrint. Supports reports and documents; excludes JavaScript-driven pages, browser screenshot capture, and editing existing PDFs.
+metadata:
+  version: "0.1.0"
 ---
 
 Convert the user's HTML without rewriting or summarizing its content. Run the
