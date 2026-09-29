@@ -6,6 +6,8 @@ HTML intact; it does not summarize content, run JavaScript, capture browser page
 edit existing PDFs, or operate an LLM rendering loop. It does not promise arbitrary
 browser CSS fidelity or PDF/UA conformance.
 
+The skill version lives in `metadata.version` in `SKILL.md`.
+
 ## Install and run
 
 Use Python 3.10+ and the native Pango/font dependencies from the
