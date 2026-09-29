@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — Unreleased
+## 0.1.0 — 2026-09-29
 
 Html-to-pdf helps agents convert local static HTML into a themed, paginated PDF for reports and documents.
 
