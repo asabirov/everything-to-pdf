@@ -1,10 +1,10 @@
 import base64
 import functools
 import http.server
+import importlib.util
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,13 +14,37 @@ import unittest
 import pymupdf
 
 ROOT = Path(__file__).resolve().parents[1]
-BROWSERS = ('google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser')
+_spec = importlib.util.spec_from_file_location('render_cli', ROOT / 'scripts/render.py')
+render_cli = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(render_cli)
+
+
+def browser_installed():
+    """Ask the CLI itself, so a Chrome it finds off PATH does not skip the test."""
+    try:
+        render_cli.browser_binary(None)
+    except render_cli.RenderError:
+        return False
+    return True
+
+
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4xkAAAAASUVORK5CYII=')
 
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
+    """The fixture directory, plus one route that refuses the client outright."""
+
     def log_message(self, *args):
         pass
+
+    def send_head(self):
+        if self.path.startswith('/denied'):
+            self.send_response(401)
+            self.send_header('WWW-Authenticate', 'Basic realm="test"')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return None
+        return super().send_head()
 
 
 class Rendering(unittest.TestCase):
@@ -222,13 +246,21 @@ class Rendering(unittest.TestCase):
         self.run_input(self.source / 'latin1.txt', success=False)
         (self.source / 'gone.md').write_text('![missing](gone.png)\n')
         self.run_input(self.source / 'gone.md', success=False)
+        (self.home / 'outside.png').write_bytes(PNG)
+        (self.source / 'escape.md').write_text('![up](../outside.png)\n')
+        self.run_input(self.source / 'escape.md', success=False)
         self.assertEqual(self.pdf.read_bytes(), prior)
+        # A colon in a file name is not a URL scheme.
+        colon = self.source / 'report:v2.md'
+        colon.write_text('# Colon in the name\n', encoding='utf-8')
+        self.run_input(colon)
+        with pymupdf.open(self.pdf) as doc:
+            self.assertEqual([row[1] for row in doc.get_toc()], ['Colon in the name'])
         self.run_input(code, '--as', 'text')
         with pymupdf.open(self.pdf) as doc:
             self.assertIn('def total(rows):', doc[0].get_text())
 
-    @unittest.skipUnless(any(shutil.which(name) for name in BROWSERS),
-                         'no Chrome or Chromium installed')
+    @unittest.skipUnless(browser_installed(), 'no Chrome or Chromium installed')
     def test_webpage_runs_javascript_and_loses_the_theme(self):
         (self.source / 'index.html').write_text(
             '<!doctype html><meta charset="utf-8"><title>Live</title>'
@@ -247,12 +279,21 @@ class Rendering(unittest.TestCase):
             self.assertIn('script ran', text)
             self.assertNotIn('no script', text)
             self.assertEqual([row[1] for row in doc.get_toc()], ['Served heading'])
-            # The browser owns the paper, so the theme's A4 geometry cannot apply.
+            # This page declares no @page, so Chrome's default paper applies, not A4.
             self.assertNotAlmostEqual(doc[0].rect.width, 595, delta=1)
-        # A browser prints its own error page and exits 0; neither may reach the output.
+        # A URL as a user would paste it, before any percent-encoding.
+        (self.source / 'Москва.html').write_text(
+            '<!doctype html><meta charset="utf-8"><h1>Cyrillic path</h1>')
+        self.run_input(url + 'Москва.html', timeout=180)
+        with pymupdf.open(self.pdf) as doc:
+            self.assertIn('Cyrillic path', doc[0].get_text())
+        # A browser prints its own error or refusal page and still exits 0;
+        # none of these may reach the output.
         prior = self.pdf.read_bytes()
         self.run_input(url, '--theme', ROOT / 'assets/design-system.md', success=False)
         self.run_input(url + 'missing.html', success=False, timeout=60)
+        result = self.run_input(url + 'denied', success=False, timeout=60)
+        self.assertIn('401', result.stderr)
         self.assertEqual(self.pdf.read_bytes(), prior)
 
 

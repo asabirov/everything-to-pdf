@@ -27,15 +27,22 @@ For new documents, use semantic headings, paragraphs, tables with `thead`, and
 local images. Headings supply PDF bookmarks; print CSS helps pagination.
 
 **A web page is the exception, and you must say so.** Chrome loads the URL, runs its
-JavaScript and prints it, so that PDF has no theme, no page-number footer, Chrome's
-own Letter paper and margins, no offline guarantee, and no asset confinement: Chrome
-fetches whatever the page asks for. Headings still become bookmarks. `--theme` with
-a URL fails instead of being silently ignored. Report those losses rather than
-calling the result themed, and name the live URL and the time you fetched it, since
-the page can change under you. For an untrusted URL, use external
-process/filesystem/network isolation; this is not a hostile-input sandbox. Chrome
-prints its own error page and still exits 0, so the CLI checks the URL first and
-fails on a name that does not resolve, a refused connection or a missing page.
+JavaScript and prints it, so that PDF has no theme, no page-number footer, no offline
+guarantee, and no asset confinement: Chrome fetches whatever the page asks for. The
+paper is whatever the page's own print CSS says, or Chrome's Letter default when it
+says nothing, so you cannot promise a paper size either. Headings still become
+bookmarks. `--theme` with a URL fails instead of being silently ignored. Report those
+losses rather than calling the result themed, and name the live URL and the time you
+fetched it, since the page can change under you. For an untrusted URL, use external
+process/filesystem/network isolation; this is not a hostile-input sandbox.
+
+**Read page 1 of a web-page PDF before you deliver it.** Chrome prints whatever it is
+shown and still exits 0, so the CLI probes the URL first and fails on a name that
+does not resolve, a refused connection, or a page that answers an error. That probe
+cannot catch everything: a redirect to a login screen answers 200, and a bot check or
+a block aimed at the probe itself answers a status only the browser can settle, so
+either can arrive as a successful render of the wrong page. When the probe got such a
+status the CLI warns and names it; check the text regardless.
 
 For local inputs, choose the theme before rendering: **explicit user theme > relevant
 project design system > bundled Geist print fallback**. At authoring time, check project
