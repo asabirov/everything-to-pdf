@@ -1,16 +1,26 @@
 import base64
+import functools
+import http.server
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 
 import pymupdf
 
 ROOT = Path(__file__).resolve().parents[1]
+BROWSERS = ('google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser')
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4xkAAAAASUVORK5CYII=')
+
+
+class Quiet(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
 
 
 class Rendering(unittest.TestCase):
@@ -23,14 +33,17 @@ class Rendering(unittest.TestCase):
         self.html = self.source / 'input.html'
         self.pdf = self.home / 'output.pdf'
 
-    def run_cli(self, html, *args, success=True):
-        self.html.write_text('<!doctype html><meta charset="utf-8">' + html)
+    def run_input(self, source, *args, success=True, timeout=30):
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/render.py'),
-                                 str(self.html), str(self.pdf), *map(str, args)],
-                                capture_output=True, text=True, timeout=30)
+                                 str(source), str(self.pdf), *map(str, args)],
+                                capture_output=True, text=True, timeout=timeout)
         self.assertEqual(result.returncode, 0 if success else 1, result.stderr)
-        self.assertFalse(list(self.home.glob('.html-to-pdf-*')))
+        self.assertFalse(list(self.home.glob('.everything-to-pdf-*')))
         return result
+
+    def run_cli(self, html, *args, **kwargs):
+        self.html.write_text('<!doctype html><meta charset="utf-8">' + html)
+        return self.run_input(self.html, *args, **kwargs)
 
     def test_paginated_text_bookmarks_and_repeated_header(self):
         rows = ''.join(f'<tr><td>Service {i:03}</td><td>USD {i}</td></tr>' for i in range(100))
@@ -164,7 +177,7 @@ class Rendering(unittest.TestCase):
                     self.assertIn(reason, result.stderr.lower())
                     self.assertLess(len(result.stderr), 600)
                     self.assertEqual(self.pdf.read_bytes(), saved)
-                    self.assertFalse(list(self.home.rglob('.html-to-pdf-*')))
+                    self.assertFalse(list(self.home.rglob('.everything-to-pdf-*')))
         finally:
             readonly.chmod(0o700)
             protected.chmod(0o600)
@@ -174,6 +187,73 @@ class Rendering(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout.split(': ', 1)[1]), str(self.pdf))
         encoded = base64.b64encode(PNG).decode()
         self.run_cli(f'<img src="data:image/png;base64,{encoded}"><p>Embedded</p>')
+
+    def test_markdown_text_and_image_inputs(self):
+        (self.source / 'chart.png').write_bytes(PNG)
+        note = self.source / 'note.md'
+        note.write_text('# Quarterly note\n\n## Второй заголовок\n\n'
+                        '| Service | Spend |\n| --- | --- |\n| Egress | USD 318 |\n\n'
+                        '```python\nspend = sum(rows)\n```\n\n![chart](chart.png)\n',
+                        encoding='utf-8')
+        self.run_input(note)
+        with pymupdf.open(self.pdf) as doc:
+            self.assertEqual([row[1] for row in doc.get_toc()],
+                             ['Quarterly note', 'Второй заголовок'])
+            for expected in ('Service', 'USD 318', 'spend = sum(rows)'):
+                self.assertIn(expected, doc[0].get_text())
+            self.assertTrue(doc[0].get_images())
+            self.assertAlmostEqual(doc[0].rect.width, 595, delta=1)
+        notes = self.source / 'notes.txt'
+        notes.write_text('<b>not bold</b> & kept\n', encoding='utf-8')
+        self.run_input(notes)
+        with pymupdf.open(self.pdf) as doc:
+            self.assertIn('<b>not bold</b> & kept', doc[0].get_text())
+        self.run_input(self.source / 'chart.png')
+        with pymupdf.open(self.pdf) as doc:
+            self.assertEqual(len(doc), 1)
+            self.assertTrue(doc[0].get_images())
+        # An extension the skill does not know needs --as; nothing else may change.
+        code = self.source / 'helper'
+        code.write_text('def total(rows):\n    return sum(rows)\n', encoding='utf-8')
+        prior = self.pdf.read_bytes()
+        result = self.run_input(code, success=False)
+        self.assertIn('--as', result.stderr)
+        (self.source / 'latin1.txt').write_bytes(b'caf\xe9\n')
+        self.run_input(self.source / 'latin1.txt', success=False)
+        (self.source / 'gone.md').write_text('![missing](gone.png)\n')
+        self.run_input(self.source / 'gone.md', success=False)
+        self.assertEqual(self.pdf.read_bytes(), prior)
+        self.run_input(code, '--as', 'text')
+        with pymupdf.open(self.pdf) as doc:
+            self.assertIn('def total(rows):', doc[0].get_text())
+
+    @unittest.skipUnless(any(shutil.which(name) for name in BROWSERS),
+                         'no Chrome or Chromium installed')
+    def test_webpage_runs_javascript_and_loses_the_theme(self):
+        (self.source / 'index.html').write_text(
+            '<!doctype html><meta charset="utf-8"><title>Live</title>'
+            '<h1>Served heading</h1><p id="js">no script</p>'
+            '<script>document.getElementById("js").textContent = "script ran"</script>')
+        server = http.server.ThreadingHTTPServer(
+            ('127.0.0.1', 0), functools.partial(Quiet, directory=str(self.source)))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        url = f'http://127.0.0.1:{server.server_address[1]}/'
+        result = self.run_input(url, timeout=180)
+        self.assertIn('theme', result.stderr)
+        with pymupdf.open(self.pdf) as doc:
+            text = doc[0].get_text()
+            self.assertIn('script ran', text)
+            self.assertNotIn('no script', text)
+            self.assertEqual([row[1] for row in doc.get_toc()], ['Served heading'])
+            # The browser owns the paper, so the theme's A4 geometry cannot apply.
+            self.assertNotAlmostEqual(doc[0].rect.width, 595, delta=1)
+        # A browser prints its own error page and exits 0; neither may reach the output.
+        prior = self.pdf.read_bytes()
+        self.run_input(url, '--theme', ROOT / 'assets/design-system.md', success=False)
+        self.run_input(url + 'missing.html', success=False, timeout=60)
+        self.assertEqual(self.pdf.read_bytes(), prior)
 
 
 if __name__ == '__main__':

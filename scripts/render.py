@@ -1,18 +1,39 @@
 #!/usr/bin/env python3
-"""Render trusted local static HTML with a validated print theme."""
+"""Render Markdown, text, images, local HTML or a web page as a PDF."""
 import argparse
 from contextlib import contextmanager
 import errno
+from html import escape
 import json
 import logging
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
-from urllib.parse import unquote, urlsplit
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, unquote, urlsplit
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+TEMP_PREFIX = '.everything-to-pdf-'
+
+# Markdown, text and images become local HTML, so they keep the themed render path.
+KINDS = {'.html': 'html', '.htm': 'html',
+         '.md': 'markdown', '.markdown': 'markdown',
+         '.txt': 'text', '.text': 'text', '.log': 'text',
+         '.png': 'image', '.jpg': 'image', '.jpeg': 'image',
+         '.gif': 'image', '.svg': 'image', '.webp': 'image'}
+BROWSERS = ('google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser')
+MAC_BROWSERS = ('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                '/Applications/Chromium.app/Contents/MacOS/Chromium')
+# Routine platform complaints a headless browser makes whether or not it succeeded.
+BROWSER_NOISE = re.compile(r'dbus|org\.freedesktop|gpu|vulkan|libva|fontconfig|'
+                           r'sandbox namespace|egl|gl display', re.I)
+# Statuses that depend on who is asking rather than on the page itself.
+BROWSER_DECIDES = frozenset({401, 403, 405, 406, 409, 429, 501})
 
 
 class RenderError(Exception):
@@ -91,7 +112,7 @@ def filesystem(role, path):
         yield
     except OSError as error:
         failed = Path(error.filename2 or error.filename or path)
-        if role == 'output' and failed.name.startswith('.html-to-pdf-'):
+        if role == 'output' and failed.name.startswith(TEMP_PREFIX):
             failed = failed.parent
         label = str(failed.absolute())
         if len(label) > 240:
@@ -125,15 +146,67 @@ class Diagnostics(logging.Handler):
             print(f'warning: renderer: {compact(message)}', file=sys.stderr)
 
 
-def render(source, output, theme):
+def input_kind(target, override):
+    """`webpage` for an http(s) URL; for a local file the override, or None for now."""
+    scheme = urlsplit(target).scheme.lower()
+    if len(scheme) > 1 and scheme not in ('http', 'https'):
+        raise RenderError('only http and https URLs are supported as web pages')
+    if scheme:
+        if override not in (None, 'webpage'):
+            raise RenderError(f'an http(s) URL is a web page, not {override}')
+        return 'webpage'
+    if override == 'webpage':
+        raise RenderError('--as webpage needs an http(s) URL')
+    return override
+
+
+def local_kind(source, override):
+    """Deferred until the input is known to be a readable file, so its own
+    diagnostics report a missing path or a directory before an extension."""
+    if override:
+        return override
+    kind = KINDS.get(source.suffix.lower())
+    if kind is None:
+        raise RenderError(f'input {json.dumps(str(source))}: unrecognised extension; '
+                          f'pass --as {{{", ".join(sorted(set(KINDS.values())))}}}')
+    return kind
+
+
+def document_markup(source, kind):
+    """Markdown, text or an image as HTML whose relative links resolve beside it."""
+    if kind == 'image':
+        return (f'<!doctype html><meta charset="utf-8"><title>{escape(source.name)}</title>'
+                '<style>img { max-height: 100vh }</style>'
+                f'<img src="{quote(source.name)}" alt="{escape(source.name)}">')
+    try:
+        text = source.read_text(encoding='utf-8')
+    except UnicodeDecodeError:
+        raise RenderError(f'input {json.dumps(str(source))}: not UTF-8 text') from None
+    if kind == 'markdown':
+        try:
+            import markdown
+        except ImportError:
+            raise RenderError('Markdown input needs the markdown package '
+                              'from requirements.txt') from None
+        body = markdown.markdown(text, extensions=['tables', 'fenced_code'])
+        style = 'pre, code { font-family: monospace }'
+    else:
+        body = '<pre>' + escape(text) + '</pre>'
+        style = 'pre { font-family: monospace }'
+    return (f'<!doctype html><meta charset="utf-8"><title>{escape(source.name)}</title>'
+            f'<style>{style}</style>{body}')
+
+
+def render(source, output, theme, kind):
     from weasyprint import CSS, HTML
     from weasyprint.urls import URLFetcher
 
     with filesystem('input', source):
         source = source.resolve(strict=True)
         if not source.is_file():
-            reason = 'is a directory' if source.is_dir() else 'not a regular HTML file'
+            reason = 'is a directory' if source.is_dir() else 'not a regular file'
             raise OSError(errno.EINVAL, reason, str(source))
+    kind = local_kind(source, kind)
     with filesystem('theme', theme):
         theme = theme.resolve(strict=True)
         css = theme_css(theme)
@@ -191,8 +264,10 @@ def render(source, output, theme):
         styles = [CSS(string=(ROOT / 'assets/print.css').read_text(encoding='utf-8')),
                   CSS(string=css)]
         with filesystem('input', source):
-            document = HTML(filename=str(source), url_fetcher=fetcher).render(stylesheets=styles)
-        with filesystem('output', output), tempfile.NamedTemporaryFile(prefix='.html-to-pdf-', suffix='.pdf',
+            page = (dict(filename=str(source)) if kind == 'html' else
+                    dict(string=document_markup(source, kind), base_url=source.as_uri()))
+            document = HTML(url_fetcher=fetcher, **page).render(stylesheets=styles)
+        with filesystem('output', output), tempfile.NamedTemporaryFile(prefix=TEMP_PREFIX, suffix='.pdf',
                                          dir=output.parent, delete=False) as handle:
             temp = Path(handle.name)
             document.write_pdf(handle)
@@ -212,14 +287,114 @@ def render(source, output, theme):
             print(f'warning: {diagnostics.count - 6} more renderer diagnostics suppressed', file=sys.stderr)
 
 
+def browser_binary(explicit):
+    if explicit:
+        if not os.access(explicit, os.X_OK) or not Path(explicit).is_file():
+            raise RenderError(f'browser {json.dumps(explicit)}: not an executable file')
+        return explicit
+    for name in BROWSERS:
+        found = shutil.which(name)
+        if found:
+            return found
+    for path in MAC_BROWSERS:
+        if os.access(path, os.X_OK):
+            return path
+    raise RenderError('no Chrome or Chromium on PATH; install one or pass --browser')
+
+
+def browser_reason(result):
+    """The browser's own complaint, without the platform noise it always prints."""
+    output = (result.stderr or '') + (result.stdout or '')
+    lines = [line for line in output.splitlines()
+             if line.strip() and not BROWSER_NOISE.search(line)]
+    return compact(lines[-1]) if lines else 'no diagnostic output'
+
+
+def check_reachable(url, timeout):
+    """A browser prints its own error page and still exits 0, so probe the URL first.
+
+    Only failures a browser cannot get past stop the render: a name that does not
+    resolve, a refused connection, a page that is not there. A status that depends
+    on who is asking is left to the browser, because the browser asks differently.
+    """
+    try:
+        with urlopen(Request(url, method='HEAD'), timeout=timeout) as response:
+            status = response.status
+    except HTTPError as error:
+        status = error.code
+    except (URLError, OSError, ValueError) as error:
+        reason = compact(getattr(error, 'reason', None) or error)
+        raise RenderError(f'cannot reach the web page: {reason}') from None
+    if status >= 400 and status not in BROWSER_DECIDES:
+        raise RenderError(f'web page returned HTTP {status}')
+
+
+def render_webpage(url, output, browser, timeout):
+    """A second engine: the browser runs the page, so this skill's theme never applies."""
+    binary = browser_binary(browser)
+    check_reachable(url, timeout)
+    print('notice: a browser prints web pages, so the print theme, the page-number '
+          'footer and the offline resource limits do not apply', file=sys.stderr)
+    with filesystem('output', output):
+        output = output.absolute()
+        output.parent.resolve(strict=True)
+    profile = Path(tempfile.mkdtemp(prefix='everything-to-pdf-profile-'))
+    temp = None
+    try:
+        with filesystem('output', output), tempfile.NamedTemporaryFile(
+                prefix=TEMP_PREFIX, suffix='.pdf', dir=output.parent, delete=False) as handle:
+            temp = Path(handle.name)
+        command = [binary, '--headless', '--disable-gpu', '--no-first-run',
+                   f'--user-data-dir={profile}', '--no-pdf-header-footer',
+                   '--generate-pdf-document-outline', f'--print-to-pdf={temp}', url]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise RenderError(f'web page did not finish within {timeout:g}s; '
+                              'raise --timeout or check the URL') from None
+        except OSError as error:
+            raise RenderError(f'cannot run the browser: '
+                              f'{compact(error.strerror or type(error).__name__)}') from None
+        if result.returncode != 0:
+            raise RenderError(f'browser exited {result.returncode}: {browser_reason(result)}')
+        data = temp.read_bytes()
+        # The page objects double as the page count and as proof this is a real PDF.
+        pages = len(re.findall(rb'/Type\s*/Page(?![s])', data))
+        if not data.startswith(b'%PDF') or not pages:
+            raise RenderError(f'browser wrote no readable PDF: {browser_reason(result)}')
+        with filesystem('output', output):
+            os.replace(temp, output)
+        temp = None
+        return pages
+    finally:
+        if temp is not None:
+            temp.unlink(missing_ok=True)
+        shutil.rmtree(profile, ignore_errors=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('input', type=Path)
+    parser.add_argument('input', help='a local .html, .md, .txt or image file, '
+                                      'or an http(s) URL')
     parser.add_argument('output', type=Path)
-    parser.add_argument('--theme', type=Path, default=ROOT / 'assets/design-system.md')
+    parser.add_argument('--as', dest='kind', metavar='KIND',
+                        choices=sorted(set(KINDS.values()) | {'webpage'}),
+                        help='input kind, when the extension does not say it')
+    parser.add_argument('--theme', type=Path, help='theme file; local inputs only')
+    parser.add_argument('--browser', help='Chrome or Chromium to print web pages with')
+    parser.add_argument('--timeout', type=float, default=90, metavar='SECONDS',
+                        help='how long a web page may take (default 90)')
     args = parser.parse_args()
     try:
-        pages = render(args.input, args.output, args.theme)
+        kind = input_kind(args.input, args.kind)
+        if kind == 'webpage':
+            if args.theme is not None:
+                raise RenderError('--theme does not apply to a web page; '
+                                  'the browser prints it')
+            pages = render_webpage(args.input, args.output, args.browser, args.timeout)
+        else:
+            pages = render(Path(args.input), args.output,
+                           args.theme or ROOT / 'assets/design-system.md', kind)
     except RenderError as error:
         print(f'error: {error}', file=sys.stderr)
         return 1

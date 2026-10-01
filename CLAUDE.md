@@ -14,9 +14,11 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -v
 The dependency step is not optional: `tests/test_render.py` imports `pymupdf`,
 and without it the suite reports a single import error rather than running. The
 rendering itself needs WeasyPrint's system libraries, which Homebrew supplies on
-macOS; the deleted workflow installed the Debian equivalents on its runner.
+macOS; the deleted workflow installed the Debian equivalents on its runner. The
+web-page test also needs Chrome or Chromium; without one it skips, so a green run
+on a browserless machine has covered one test fewer than it looks.
 
-It must exit 0. Last verified on a macOS controller: Ran 3 tests in 18.1s, OK.
+It must exit 0. Last verified on a Linux VM with Chrome 152: Ran 5 tests in 44.5s, OK.
 
 The rule this follows, and why, is [`ci-rule.md`](https://github.com/asabirov/org/blob/main/ci-rule.md)
 in `asabirov/org`. Nothing stops a broken commit reaching `main` here — the
