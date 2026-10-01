@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -32,7 +33,8 @@ MAC_BROWSERS = ('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
                 '/Applications/Chromium.app/Contents/MacOS/Chromium')
 # Routine platform complaints a headless browser makes whether or not it succeeded.
 BROWSER_NOISE = re.compile(r'dbus|org\.freedesktop|gpu|vulkan|libva|fontconfig|'
-                           r'sandbox namespace|egl|gl display', re.I)
+                           r'sandbox namespace|egl|gl display|allocator|'
+                           r'cvdisplaylink|parsing certificate|parsing extensions', re.I)
 # Statuses a browser can still get past, because it asks differently: a block on
 # the client rather than on the page. 401 is not among them: this skill sends no
 # credentials, so a page that demands them is one the browser cannot print either.
@@ -42,6 +44,10 @@ BROWSER_DECIDES = frozenset({403, 405, 406, 501})
 BROWSER_POLL = 0.5
 # Grace for the browser to shut down once it is told to.
 BROWSER_GRACE = 10
+# The browser's own verdict that it will never print this page. Without it a page the
+# browser abandoned in a second would wait out the whole timeout, because on macOS it
+# does not exit to report the failure.
+BROWSER_GAVE_UP = re.compile(r'page load failed', re.I)
 # Everything legal in a path or query, so only non-ASCII and spaces get encoded.
 URL_SAFE = "/%:@-._~!$&'()*+,;=?"
 
@@ -342,15 +348,28 @@ def finished_pdf(path):
     return size if head.startswith(b'%PDF') and b'%%EOF' in tail else None
 
 
+def signal_browser(process, number):
+    """Signal the browser and the helpers it started, which share its session."""
+    try:
+        os.killpg(os.getpgid(process.pid), number)
+    except (OSError, AttributeError):   # already gone, or no process groups here
+        process.send_signal(number)
+
+
 def end_browser(process):
-    """Ask the browser to stop, and insist if it will not."""
+    """Ask the browser to stop, and insist if it will not.
+
+    Signalling the browser alone leaves a renderer behind: it is reparented to init
+    and outlives the CLI. The browser is given its own session so one signal reaches
+    everything it started.
+    """
     if process.poll() is not None:
         return
-    process.terminate()
+    signal_browser(process, signal.SIGTERM)
     try:
         process.wait(timeout=BROWSER_GRACE)
     except subprocess.TimeoutExpired:
-        process.kill()
+        signal_browser(process, signal.SIGKILL)
         process.wait()
 
 
@@ -364,7 +383,8 @@ def print_with_browser(command, target, timeout):
     """
     with tempfile.TemporaryFile(mode='w+', errors='replace') as log:
         try:
-            process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
+            process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
+                                       start_new_session=True)
         except OSError as error:
             raise RenderError(f'cannot run the browser: '
                               f'{compact(error.strerror or type(error).__name__)}') from None
@@ -384,11 +404,17 @@ def print_with_browser(command, target, timeout):
                                           f'{browser_reason(diagnostics())}')
                     return diagnostics()
                 size = finished_pdf(target)
-                if size is not None and size == settled:
-                    return diagnostics()
+                if size is not None:
+                    if size == settled:
+                        return diagnostics()
+                elif BROWSER_GAVE_UP.search(diagnostics()):
+                    # Only once there is no PDF: a written one is the answer regardless.
+                    raise RenderError('browser could not load the page: '
+                                      f'{browser_reason(diagnostics())}')
                 settled = size
                 if time.monotonic() >= deadline:
-                    raise RenderError(f'web page did not finish within {timeout:g}s; '
+                    raise RenderError(f'web page did not finish within {timeout:g}s '
+                                      f'({browser_reason(diagnostics())}); '
                                       'raise --timeout or check the URL')
                 time.sleep(BROWSER_POLL)
         finally:
