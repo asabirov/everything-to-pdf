@@ -38,11 +38,13 @@ process/filesystem/network isolation; this is not a hostile-input sandbox.
 
 **Read page 1 of a web-page PDF before you deliver it.** Chrome prints whatever it is
 shown and still exits 0, so the CLI probes the URL first and fails on a name that
-does not resolve, a refused connection, or a page that answers an error. That probe
-cannot catch everything: a redirect to a login screen answers 200, and a bot check or
-a block aimed at the probe itself answers a status only the browser can settle, so
-either can arrive as a successful render of the wrong page. When the probe got such a
-status the CLI warns and names it; check the text regardless.
+does not resolve, a refused connection, a page that answers an error, or redirects
+that never arrive anywhere. That probe cannot catch everything: a redirect to a login
+screen answers 200, and a bot check or a block aimed at the probe itself answers a
+status only the browser can settle, so either can arrive as a successful render of the
+wrong page. When the probe got such a status the CLI warns and names it; check the
+text regardless. A URL carrying credentials (`user:pass@host`) is refused outright —
+save such a page from a browser and render the saved file.
 
 For local inputs, choose the theme before rendering: **explicit user theme > relevant
 project design system > bundled Geist print fallback**. At authoring time, check project

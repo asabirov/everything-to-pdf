@@ -32,7 +32,8 @@ PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4
 
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
-    """The fixture directory, plus one route that refuses the client outright."""
+    """The fixture directory, plus a route that refuses the client outright and one
+    that redirects to itself for ever."""
 
     def log_message(self, *args):
         pass
@@ -41,6 +42,12 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
         if self.path.startswith('/denied'):
             self.send_response(401)
             self.send_header('WWW-Authenticate', 'Basic realm="test"')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return None
+        if self.path.startswith('/loop'):
+            self.send_response(302)
+            self.send_header('Location', '/loop')
             self.send_header('Content-Length', '0')
             self.end_headers()
             return None
@@ -261,19 +268,19 @@ class Rendering(unittest.TestCase):
         with pymupdf.open(self.pdf) as doc:
             self.assertIn('def total(rows):', doc[0].get_text())
 
-    def test_credentials_stay_on_the_origin_that_was_addressed(self):
+    def test_url_credentials_are_refused_and_never_sent(self):
+        self.run_cli('<p>Original</p>')
+        prior = self.pdf.read_bytes()
+        for url in ('http://user:secret@example.com/a', 'https://user@example.com/a'):
+            with self.subTest(url=url):
+                result = self.run_input(url, success=False)
+                self.assertIn('credentials', result.stderr)
+                self.assertNotIn('secret', result.stderr)
+                self.assertEqual(self.pdf.read_bytes(), prior)
+        # Nothing may put them back on the probe, whatever a caller passes.
         request = render_cli.probe_request('http://user:secret@example.com/a')
-        self.assertIn('Authorization', request.headers)
-        for target, carried in (('http://example.com/b', True),
-                                ('http://example.com:80/b', True),
-                                ('http://other.example/b', False),
-                                ('https://example.com/b', False)):
-            with self.subTest(target=target):
-                following = render_cli.ScopedRedirects().redirect_request(
-                    request, None, 302, 'Found', {}, target)
-                self.assertEqual('Authorization' in following.headers, carried)
-                # urllib would ask the redirect target for the body with GET.
-                self.assertEqual(following.get_method(), 'HEAD')
+        self.assertNotIn('Authorization', request.headers)
+        self.assertNotIn('secret', request.full_url)
 
     @unittest.skipUnless(browser_installed(), 'no Chrome or Chromium installed')
     def test_webpage_runs_javascript_and_loses_the_theme(self):
@@ -309,6 +316,9 @@ class Rendering(unittest.TestCase):
         self.run_input(url + 'missing.html', success=False, timeout=60)
         result = self.run_input(url + 'denied', success=False, timeout=60)
         self.assertIn('401', result.stderr)
+        # Redirects that never arrive anywhere are not a reachable page.
+        result = self.run_input(url + 'loop', success=False, timeout=60)
+        self.assertIn('redirect', result.stderr)
         self.assertEqual(self.pdf.read_bytes(), prior)
 
 
