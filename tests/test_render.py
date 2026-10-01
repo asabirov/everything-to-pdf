@@ -57,10 +57,10 @@ class Rendering(unittest.TestCase):
         self.html = self.source / 'input.html'
         self.pdf = self.home / 'output.pdf'
 
-    def run_input(self, source, *args, success=True, timeout=30):
+    def run_input(self, source, *args, success=True, timeout=30, cwd=None):
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/render.py'),
                                  str(source), str(self.pdf), *map(str, args)],
-                                capture_output=True, text=True, timeout=timeout)
+                                capture_output=True, text=True, timeout=timeout, cwd=cwd)
         self.assertEqual(result.returncode, 0 if success else 1, result.stderr)
         self.assertFalse(list(self.home.glob('.everything-to-pdf-*')))
         return result
@@ -250,15 +250,30 @@ class Rendering(unittest.TestCase):
         (self.source / 'escape.md').write_text('![up](../outside.png)\n')
         self.run_input(self.source / 'escape.md', success=False)
         self.assertEqual(self.pdf.read_bytes(), prior)
-        # A colon in a file name is not a URL scheme.
-        colon = self.source / 'report:v2.md'
-        colon.write_text('# Colon in the name\n', encoding='utf-8')
-        self.run_input(colon)
+        # A colon in a file name is not a URL scheme. The name has to be relative:
+        # an absolute path starts with a slash and never had a scheme to misread.
+        (self.source / 'report:v2.md').write_text('# Colon in the name\n',
+                                                  encoding='utf-8')
+        self.run_input('report:v2.md', cwd=self.source)
         with pymupdf.open(self.pdf) as doc:
             self.assertEqual([row[1] for row in doc.get_toc()], ['Colon in the name'])
         self.run_input(code, '--as', 'text')
         with pymupdf.open(self.pdf) as doc:
             self.assertIn('def total(rows):', doc[0].get_text())
+
+    def test_credentials_stay_on_the_origin_that_was_addressed(self):
+        request = render_cli.probe_request('http://user:secret@example.com/a')
+        self.assertIn('Authorization', request.headers)
+        for target, carried in (('http://example.com/b', True),
+                                ('http://example.com:80/b', True),
+                                ('http://other.example/b', False),
+                                ('https://example.com/b', False)):
+            with self.subTest(target=target):
+                following = render_cli.ScopedRedirects().redirect_request(
+                    request, None, 302, 'Found', {}, target)
+                self.assertEqual('Authorization' in following.headers, carried)
+                # urllib would ask the redirect target for the body with GET.
+                self.assertEqual(following.get_method(), 'HEAD')
 
     @unittest.skipUnless(browser_installed(), 'no Chrome or Chromium installed')
     def test_webpage_runs_javascript_and_loses_the_theme(self):

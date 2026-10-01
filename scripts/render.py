@@ -16,7 +16,7 @@ import sys
 import tempfile
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMP_PREFIX = '.everything-to-pdf-'
@@ -154,16 +154,17 @@ class Diagnostics(logging.Handler):
 
 def input_kind(target, override):
     """`webpage` for an http(s) URL; for a local file the override, or None for now."""
-    if urlsplit(target).scheme.lower() in ('http', 'https'):
-        if override not in (None, 'webpage'):
-            raise RenderError(f'an http(s) URL is a web page, not {override}')
-        return 'webpage'
-    # Only `://` means a URL, so a file named `report:v2.md` stays a file.
-    if '://' in target:
+    # Only `scheme://` means a URL, so files named `report:v2.md` or `http:notes.md`
+    # stay files.
+    if '://' not in target:
+        if override == 'webpage':
+            raise RenderError('--as webpage needs an http(s) URL')
+        return override
+    if urlsplit(target).scheme.lower() not in ('http', 'https'):
         raise RenderError('only http and https URLs are supported as web pages')
-    if override == 'webpage':
-        raise RenderError('--as webpage needs an http(s) URL')
-    return override
+    if override not in (None, 'webpage'):
+        raise RenderError(f'an http(s) URL is a web page, not {override}')
+    return 'webpage'
 
 
 def local_kind(source, override):
@@ -316,6 +317,27 @@ def browser_reason(result):
     return compact(lines[-1]) if lines else 'no diagnostic output'
 
 
+def origin(url):
+    """Scheme, host and port, with the default port spelled out."""
+    parts = urlsplit(url)
+    return (parts.scheme, parts.hostname,
+            parts.port or (443 if parts.scheme == 'https' else 80))
+
+
+class ScopedRedirects(HTTPRedirectHandler):
+    """urllib would copy the credentials header to whatever host it is redirected
+    to, and would ask for the body with GET. A browser does neither: credentials in
+    a URL belong to that URL's origin alone."""
+
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        following = super().redirect_request(request, fp, code, msg, headers, newurl)
+        if following is not None:
+            following.method = 'HEAD'
+            if origin(newurl) != origin(request.full_url):
+                following.remove_header('Authorization')
+        return following
+
+
 def probe_request(url):
     """urllib needs an ASCII URL and a header for credentials; a browser takes the
     Unicode form, and credentials embedded in it, exactly as the user typed them."""
@@ -325,6 +347,8 @@ def probe_request(url):
         netloc = host if host.isascii() else host.encode('idna').decode('ascii')
     except UnicodeError:
         raise RenderError('web page host is not a usable domain name') from None
+    if ':' in netloc:
+        netloc = f'[{netloc}]'          # an IPv6 literal keeps its brackets
     if parts.port:
         netloc += f':{parts.port}'
     headers = {}
@@ -345,7 +369,8 @@ def check_reachable(url, timeout):
     because only the browser can settle it.
     """
     try:
-        with urlopen(probe_request(url), timeout=timeout) as response:
+        with build_opener(ScopedRedirects()).open(probe_request(url),
+                                                 timeout=timeout) as response:
             status = response.status
     except HTTPError as error:
         status = error.code
