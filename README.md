@@ -57,10 +57,18 @@ Credentials in the URL are forwarded with that request, so `https://user:pass@ho
 works and a genuine 401 fails. Three things still get through: a redirect to a login
 screen, which answers 200; a bot check, which answers 200; and 403, 405, 406 or 501,
 which can be a block on the HEAD probe rather than on the page, so those are left to
-Chrome and the CLI prints a warning naming the status. The probe also uses Python's
-CA bundle and `*_proxy` variables rather than Chrome's root store and system proxy,
-so on a Python install without its certificates it can refuse an https URL that
-Chrome would render.
+Chrome and the CLI prints a warning naming the status. Credentials in the URL are sent to the host
+you addressed and, like a browser, are not forwarded if the site redirects to another
+origin — so a redirect behind a credentialed URL fails rather than leaking the
+password or quietly printing a login page.
+
+Two things make the probe see a slightly different internet from Chrome's. It uses
+Python's CA bundle and `*_proxy` variables rather than Chrome's root store and system
+proxy, so on a Python install without its certificates it can refuse an https URL
+Chrome would render. And it resolves an internationalized host with Python's IDNA
+codec, which differs from Chrome's for a few characters — `faß.de` becomes `fass.de`
+here and stays `xn--fa-hia.de` in Chrome — so for those hosts the probe checks a
+different name than Chrome fetches.
 
 `--timeout` bounds the render, default 90 seconds. Chrome runs with its own sandbox
 and a throwaway profile, never your browser profile; it is still a full browser, so
