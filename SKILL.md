@@ -1,19 +1,46 @@
 ---
-name: html-to-pdf
-description: Use when converting local static HTML into a themed, paginated PDF with WeasyPrint. Supports reports and documents; excludes JavaScript-driven pages, browser screenshot capture, and editing existing PDFs.
+name: everything-to-pdf
+description: Use when converting Markdown, plain text or code, an image, local static HTML, or a web page into a PDF. Local inputs get a themed, paginated WeasyPrint render; a web page is printed by headless Chrome and loses the theme. Excludes office documents and editing existing PDFs.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
-Convert the user's HTML without rewriting or summarizing its content. Run the
-deterministic converter once; there is no LLM rendering loop or JavaScript engine.
+Convert the user's input without rewriting or summarizing its content. Run the
+deterministic converter once; there is no LLM rendering loop. The input decides
+which of two engines runs, and that choice decides what the user gets:
+
+| Input | Recognized by | Engine | Theme |
+| --- | --- | --- | --- |
+| Local static HTML | `.html`, `.htm` | WeasyPrint | applies |
+| Markdown | `.md`, `.markdown` | WeasyPrint | applies |
+| Plain text, code | `.txt`, `.text`, `.log`, `--as text` | WeasyPrint | applies |
+| Image | `.png`, `.jpg`, `.jpeg`, `.gif`, `.svg`, `.webp` | WeasyPrint | applies |
+| Web page | an `http`/`https` URL | headless Chrome | does not apply |
+
+Markdown, text and images become local HTML on the WeasyPrint path, so they keep
+everything local HTML has: no JavaScript, no network, assets confined to the input's
+own directory, and the theme governing the output. Markdown supports tables and
+fenced code blocks, and its headings still supply bookmarks. Text and code are
+escaped rather than interpreted, and set in monospace. A tall image is scaled to one
+page. Pass `--as` when the extension does not name the kind, as with a code file.
 For new documents, use semantic headings, paragraphs, tables with `thead`, and
 local images. Headings supply PDF bookmarks; print CSS helps pagination.
 
-Choose the theme before rendering: **explicit user theme > relevant project design
-system > bundled Geist print fallback**. At authoring time, check project instructions
-and their referenced design/token files. Also inspect obvious project-local sources
-even if unreferenced: root `DESIGN.md`, `design-system.md`, token files, and files
+**A web page is the exception, and you must say so.** Chrome loads the URL, runs its
+JavaScript and prints it, so that PDF has no theme, no page-number footer, Chrome's
+own Letter paper and margins, no offline guarantee, and no asset confinement: Chrome
+fetches whatever the page asks for. Headings still become bookmarks. `--theme` with
+a URL fails instead of being silently ignored. Report those losses rather than
+calling the result themed, and name the live URL and the time you fetched it, since
+the page can change under you. For an untrusted URL, use external
+process/filesystem/network isolation; this is not a hostile-input sandbox. Chrome
+prints its own error page and still exits 0, so the CLI checks the URL first and
+fails on a name that does not resolve, a refused connection or a missing page.
+
+For local inputs, choose the theme before rendering: **explicit user theme > relevant
+project design system > bundled Geist print fallback**. At authoring time, check project
+instructions and their referenced design/token files. Also inspect obvious project-local
+sources even if unreferenced: root `DESIGN.md`, `design-system.md`, token files, and files
 directly inside a known styles folder. Keep this a bounded check, not a recursive
 search. Then check the available skill catalog for a matching brand. Read only the
 relevant skill and its linked color, type and print references; do not crawl the
@@ -36,12 +63,15 @@ font downloads or additional dependencies. Preserve existing source CSS.
 
 Use an existing external Python environment with [requirements.txt](requirements.txt)
 installed. First-run system dependencies and venv setup are in [README.md](README.md).
-Use the README’s default venv below, or substitute an existing compatible environment.
+Use the README's default venv below, or substitute an existing compatible environment.
+Web pages additionally need Chrome or Chromium on `PATH`, or `--browser PATH`.
 From the skill directory:
 
 ```sh
-~/.local/share/html-to-pdf/venv/bin/python scripts/render.py INPUT.html OUTPUT.pdf
-~/.local/share/html-to-pdf/venv/bin/python scripts/render.py INPUT.html OUTPUT.pdf --theme /path/to/design-system.md
+~/.local/share/everything-to-pdf/venv/bin/python scripts/render.py NOTES.md OUT.pdf
+~/.local/share/everything-to-pdf/venv/bin/python scripts/render.py IN.html OUT.pdf --theme /path/to/design-system.md
+~/.local/share/everything-to-pdf/venv/bin/python scripts/render.py helper.py OUT.pdf --as text
+~/.local/share/everything-to-pdf/venv/bin/python scripts/render.py https://example.com/page OUT.pdf
 ```
 
 The output directory must exist. Store inputs, output, themes, venvs and inspection
@@ -50,12 +80,13 @@ when designing or changing the theme: prose guides authoring, its one strict JSO
 block controls the print defaults. Author HTML/CSS retains normal cascade precedence.
 Keep custom document CSS in the source or a linked local stylesheet.
 
-Resources must be embedded data URIs or files inside the input's resolved parent
-directory, including nested folders. For a symlinked input, assets belong beside
-the real HTML file, not beside the symlink. Copy required assets there; network fetches,
-parent traversal and symlinks escaping that root fail. Normal external hyperlinks
-remain links and are not fetched. On failure, fix the reported resource/theme/input/output
-problem and rerun; an existing output survives. Warnings may indicate unsupported CSS.
+For a local input, resources must be embedded data URIs or files inside the input's
+resolved parent directory, including nested folders. For a symlinked input, assets
+belong beside the real file, not beside the symlink. Copy required assets there;
+network fetches, parent traversal and symlinks escaping that root fail. Normal
+external hyperlinks remain links and are not fetched. On failure, fix the reported
+resource/theme/input/output problem and rerun; an existing output survives.
+Warnings may indicate unsupported CSS.
 
 Verify the delivered PDF's text and page count and inspect rendered pages for clipping
 when layout matters. Report warnings and any inspection gaps. Static print layout is

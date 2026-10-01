@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0 — 2026-10-01
+
+The skill is now `everything-to-pdf`: it converts Markdown, plain text or code, an image, local static HTML, or a web page.
+
+### Added
+
+- **Markdown input.** Point the skill at a `.md` file and it renders on the same themed path as HTML, with tables, fenced code blocks, bookmarks from headings, and images that sit beside the Markdown. This replaces hand-writing HTML first, and costs one pure-Python dependency.
+
+- **Plain text and code input.** A `.txt`, `.text` or `.log` file, or any file with `--as text`, is escaped rather than interpreted, set in monospace, and wrapped so long lines stay on the page. This turns logs and source files into readable documents without markup.
+
+- **Image input.** A `.png`, `.jpg`, `.jpeg`, `.gif`, `.svg` or `.webp` file becomes a one-page PDF, scaled to fit the page even when the image is very tall.
+
+- **Web pages, through a browser.** Give the skill an `http`/`https` URL and headless Chrome loads the page, runs its JavaScript and prints it, keeping bookmarks from headings. You lose the theme, the page-number footer, the theme's paper size and margins, the offline guarantee, and the confinement of resources to one directory; the skill says so on every run, and `--theme` with a URL fails rather than being ignored. Chrome prints its own error page and still reports success, so the URL is checked first and an unreachable or missing page fails without touching your previous output.
+
+- **`--as` for unnamed kinds.** `--as html|markdown|text|image|webpage` names the input kind when the extension does not. An unrecognized extension fails and asks for `--as` instead of guessing.
+
+### Changed
+
+- **Renamed from `html-to-pdf` to `everything-to-pdf`,** including the skill name, the recommended venv path (`~/.local/share/everything-to-pdf/venv`) and the temporary file prefix (`.everything-to-pdf-*.pdf`). GitHub redirects keep old clone URLs working. Installed copies of the old skill folder keep working but will not be updated; reinstall under the new name.
+
 ## 0.1.0 — 2026-09-29
 
 Html-to-pdf helps agents convert local static HTML into a themed, paginated PDF for reports and documents.
