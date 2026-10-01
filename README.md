@@ -70,11 +70,14 @@ codec, which differs from Chrome's for a few characters — `faß.de` becomes `f
 here and stays `xn--fa-hia.de` in Chrome — so for those hosts the probe checks a
 different name than Chrome fetches.
 
-`--timeout` bounds how long the CLI waits for the PDF, default 90 seconds. It does not
-wait for Chrome to exit: Chrome writes the finished PDF and then, on macOS, keeps
-running, so the CLI watches for a PDF that is whole and has stopped growing and then
-ends the browser itself. Chrome prints when the page finishes loading, so whatever a
-script adds afterwards on a timer is not in the PDF.
+`--timeout` bounds the HEAD probe and then the wait for the PDF separately, each at
+90 seconds by default, so a URL that stalls at both steps can take twice that. The CLI
+does not wait for Chrome to exit: Chrome writes the finished PDF and then, on macOS,
+keeps running, so the CLI watches for a PDF that is whole and has stopped growing and
+then ends the browser. It also stops early when Chrome reports it could not load the
+page, rather than waiting out the timeout to say so. Chrome prints when the page
+finishes loading, so whatever a script adds afterwards on a timer of any real length
+is missing from the PDF.
 
 Chrome runs with its own sandbox and a throwaway profile, never your browser profile;
 it is still a full browser, so isolate untrusted URLs externally. A rendered page
