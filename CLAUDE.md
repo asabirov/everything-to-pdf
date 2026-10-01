@@ -18,7 +18,9 @@ macOS; the deleted workflow installed the Debian equivalents on its runner. The
 web-page test also needs Chrome or Chromium; without one it skips, so a green run
 on a browserless machine has covered one test fewer than it looks.
 
-It must exit 0. Last verified on a Linux VM with Chrome 152: Ran 6 tests in 45.6s, OK.
+It must exit 0. Last verified on this macOS controller with Chrome 154: Ran 6 tests,
+OK, in 47s and 100s on two runs — a live browser makes the time vary. Also verified
+on a Linux VM with Chrome 152: Ran 6 tests in 45.6s, OK.
 
 The rule this follows, and why, is [`ci-rule.md`](https://github.com/asabirov/org/blob/main/ci-rule.md)
 in `asabirov/org`. Nothing stops a broken commit reaching `main` here — the

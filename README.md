@@ -52,15 +52,15 @@ page count.
 **A web-page render can succeed on the wrong page, so read page 1.** Chrome prints
 whatever it is shown and exits 0 either way — including its own "site can't be
 reached" page. The CLI therefore sends a HEAD request first and fails on a name that
-does not resolve, a refused connection, or a status that means the page is not there.
-Credentials in the URL are forwarded with that request, so `https://user:pass@host/`
-works and a genuine 401 fails. Three things still get through: a redirect to a login
-screen, which answers 200; a bot check, which answers 200; and 403, 405, 406 or 501,
-which can be a block on the HEAD probe rather than on the page, so those are left to
-Chrome and the CLI prints a warning naming the status. Credentials in the URL are sent to the host
-you addressed and, like a browser, are not forwarded if the site redirects to another
-origin — so a redirect behind a credentialed URL fails rather than leaking the
-password or quietly printing a login page.
+does not resolve, a refused connection, a status that means the page is not there, or
+redirects that never arrive anywhere. Two things still get through: a login screen or
+a bot check, both of which answer 200; and 403, 405, 406 or 501, which can be a block
+on the HEAD probe rather than on the page, so those are left to Chrome and the CLI
+prints a warning naming the status.
+
+**A URL carrying credentials is refused.** `https://user:pass@host/` fails with a
+message rather than being fetched; this skill prints pages that are open to it. For a
+page behind a login, save it from your own browser and render the saved file.
 
 Two things make the probe see a slightly different internet from Chrome's. It uses
 Python's CA bundle and `*_proxy` variables rather than Chrome's root store and system
@@ -70,10 +70,15 @@ codec, which differs from Chrome's for a few characters — `faß.de` becomes `f
 here and stays `xn--fa-hia.de` in Chrome — so for those hosts the probe checks a
 different name than Chrome fetches.
 
-`--timeout` bounds the render, default 90 seconds. Chrome runs with its own sandbox
-and a throwaway profile, never your browser profile; it is still a full browser, so
-isolate untrusted URLs externally. A rendered page reflects one fetch at one moment —
-record the URL and the time with the output.
+`--timeout` bounds how long the CLI waits for the PDF, default 90 seconds. It does not
+wait for Chrome to exit: Chrome writes the finished PDF and then, on macOS, keeps
+running, so the CLI watches for a PDF that is whole and has stopped growing and then
+ends the browser itself. Chrome prints when the page finishes loading, so whatever a
+script adds afterwards on a timer is not in the PDF.
+
+Chrome runs with its own sandbox and a throwaway profile, never your browser profile;
+it is still a full browser, so isolate untrusted URLs externally. A rendered page
+reflects one fetch at one moment — record the URL and the time with the output.
 
 ## Install and run
 

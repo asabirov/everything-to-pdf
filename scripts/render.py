@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Render Markdown, text, images, local HTML or a web page as a PDF."""
 import argparse
-from base64 import b64encode
 from contextlib import contextmanager
 import errno
 from html import escape
@@ -14,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -34,9 +34,14 @@ MAC_BROWSERS = ('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 BROWSER_NOISE = re.compile(r'dbus|org\.freedesktop|gpu|vulkan|libva|fontconfig|'
                            r'sandbox namespace|egl|gl display', re.I)
 # Statuses a browser can still get past, because it asks differently: a block on
-# the client rather than on the page. 401 is not among them -- any credentials are
-# in the URL, and the probe sends them too, so a 401 is a real refusal.
+# the client rather than on the page. 401 is not among them: this skill sends no
+# credentials, so a page that demands them is one the browser cannot print either.
 BROWSER_DECIDES = frozenset({403, 405, 406, 501})
+# How often to look at the PDF the browser is writing, and how long it must be
+# whole and unchanged before the browser is ended.
+BROWSER_POLL = 0.5
+# Grace for the browser to shut down once it is told to.
+BROWSER_GRACE = 10
 # Everything legal in a path or query, so only non-ASCII and spaces get encoded.
 URL_SAFE = "/%:@-._~!$&'()*+,;=?"
 
@@ -160,8 +165,12 @@ def input_kind(target, override):
         if override == 'webpage':
             raise RenderError('--as webpage needs an http(s) URL')
         return override
-    if urlsplit(target).scheme.lower() not in ('http', 'https'):
+    parts = urlsplit(target)
+    if parts.scheme.lower() not in ('http', 'https'):
         raise RenderError('only http and https URLs are supported as web pages')
+    if parts.username is not None or parts.password is not None:
+        raise RenderError('a URL carrying credentials (user:pass@) is not supported; '
+                          'remove them, or save the page and render the saved file')
     if override not in (None, 'webpage'):
         raise RenderError(f'an http(s) URL is a web page, not {override}')
     return 'webpage'
@@ -309,38 +318,96 @@ def browser_binary(explicit):
     raise RenderError('no Chrome or Chromium on PATH; install one or pass --browser')
 
 
-def browser_reason(result):
+def browser_reason(output):
     """The browser's own complaint, without the platform noise it always prints."""
-    output = (result.stderr or '') + (result.stdout or '')
     lines = [line for line in output.splitlines()
              if line.strip() and not BROWSER_NOISE.search(line)]
     return compact(lines[-1]) if lines else 'no diagnostic output'
 
 
-def origin(url):
-    """Scheme, host and port, with the default port spelled out."""
-    parts = urlsplit(url)
-    return (parts.scheme, parts.hostname,
-            parts.port or (443 if parts.scheme == 'https' else 80))
+def finished_pdf(path):
+    """The size of a PDF the browser has finished writing, or None while it has not.
+
+    A complete PDF opens with the signature and closes with the trailer marker, so a
+    file carrying both is a whole document however much more the browser means to do.
+    """
+    try:
+        with path.open('rb') as handle:
+            head = handle.read(5)
+            size = handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, size - 1024))
+            tail = handle.read()
+    except OSError:
+        return None
+    return size if head.startswith(b'%PDF') and b'%%EOF' in tail else None
 
 
-class ScopedRedirects(HTTPRedirectHandler):
-    """urllib would copy the credentials header to whatever host it is redirected
-    to, and would ask for the body with GET. A browser does neither: credentials in
-    a URL belong to that URL's origin alone."""
+def end_browser(process):
+    """Ask the browser to stop, and insist if it will not."""
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=BROWSER_GRACE)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
+def print_with_browser(command, target, timeout):
+    """Run the browser until the PDF is written, and return its diagnostics.
+
+    Chrome writes the complete PDF in a few seconds and then, on macOS, never exits,
+    so waiting for its exit status fails every web render. Watch the file instead: a
+    PDF that is whole and has stopped growing is the finished print, so end the
+    browser rather than waiting for it to agree.
+    """
+    with tempfile.TemporaryFile(mode='w+', errors='replace') as log:
+        try:
+            process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
+        except OSError as error:
+            raise RenderError(f'cannot run the browser: '
+                              f'{compact(error.strerror or type(error).__name__)}') from None
+
+        def diagnostics():
+            log.seek(0)
+            return log.read()
+
+        deadline = time.monotonic() + timeout
+        settled = None
+        try:
+            while True:
+                code = process.poll()
+                if code is not None:
+                    if code != 0:
+                        raise RenderError(f'browser exited {code}: '
+                                          f'{browser_reason(diagnostics())}')
+                    return diagnostics()
+                size = finished_pdf(target)
+                if size is not None and size == settled:
+                    return diagnostics()
+                settled = size
+                if time.monotonic() >= deadline:
+                    raise RenderError(f'web page did not finish within {timeout:g}s; '
+                                      'raise --timeout or check the URL')
+                time.sleep(BROWSER_POLL)
+        finally:
+            end_browser(process)
+
+
+class HeadRedirects(HTTPRedirectHandler):
+    """urllib would ask a redirect target for the body with GET; the probe only ever
+    wants to know whether the page is there."""
 
     def redirect_request(self, request, fp, code, msg, headers, newurl):
         following = super().redirect_request(request, fp, code, msg, headers, newurl)
         if following is not None:
             following.method = 'HEAD'
-            if origin(newurl) != origin(request.full_url):
-                following.remove_header('Authorization')
         return following
 
 
 def probe_request(url):
-    """urllib needs an ASCII URL and a header for credentials; a browser takes the
-    Unicode form, and credentials embedded in it, exactly as the user typed them."""
+    """urllib needs an ASCII URL; a browser takes the Unicode form as typed."""
     parts = urlsplit(url)
     host = parts.hostname or ''
     try:
@@ -351,13 +418,9 @@ def probe_request(url):
         netloc = f'[{netloc}]'          # an IPv6 literal keeps its brackets
     if parts.port:
         netloc += f':{parts.port}'
-    headers = {}
-    if parts.username is not None:
-        secret = f'{unquote(parts.username)}:{unquote(parts.password or "")}'
-        headers['Authorization'] = 'Basic ' + b64encode(secret.encode()).decode()
     return Request(urlunsplit((parts.scheme, netloc, quote(parts.path, safe=URL_SAFE),
                                quote(parts.query, safe=URL_SAFE), '')),
-                   method='HEAD', headers=headers)
+                   method='HEAD')
 
 
 def check_reachable(url, timeout):
@@ -369,14 +432,19 @@ def check_reachable(url, timeout):
     because only the browser can settle it.
     """
     try:
-        with build_opener(ScopedRedirects()).open(probe_request(url),
-                                                 timeout=timeout) as response:
+        with build_opener(HeadRedirects()).open(probe_request(url),
+                                               timeout=timeout) as response:
             status = response.status
     except HTTPError as error:
         status = error.code
     except (URLError, OSError, ValueError) as error:
         reason = compact(getattr(error, 'reason', None) or error)
         raise RenderError(f'cannot reach the web page: {reason}') from None
+    if 300 <= status < 400:
+        # urllib hands back the 3xx itself when redirects loop, outnumber its limit,
+        # or leave http(s), and a reply with no Location lands here too. The browser
+        # gets no document from any of them.
+        raise RenderError(f'web page redirects without arriving anywhere (HTTP {status})')
     if status < 400:
         return None
     if status not in BROWSER_DECIDES:
@@ -402,21 +470,12 @@ def render_webpage(url, output, browser, timeout):
         command = [binary, '--headless', '--disable-gpu', '--no-first-run',
                    f'--user-data-dir={profile}', '--no-pdf-header-footer',
                    '--generate-pdf-document-outline', f'--print-to-pdf={temp}', url]
-        try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            raise RenderError(f'web page did not finish within {timeout:g}s; '
-                              'raise --timeout or check the URL') from None
-        except OSError as error:
-            raise RenderError(f'cannot run the browser: '
-                              f'{compact(error.strerror or type(error).__name__)}') from None
-        if result.returncode != 0:
-            raise RenderError(f'browser exited {result.returncode}: {browser_reason(result)}')
+        log = print_with_browser(command, temp, timeout)
         data = temp.read_bytes()
         # The page objects double as the page count and as proof this is a real PDF.
         pages = len(re.findall(rb'/Type\s*/Page(?![s])', data))
         if not data.startswith(b'%PDF') or not pages:
-            raise RenderError(f'browser wrote no readable PDF: {browser_reason(result)}')
+            raise RenderError(f'browser wrote no readable PDF: {browser_reason(log)}')
         with filesystem('output', output):
             os.replace(temp, output)
         temp = None
