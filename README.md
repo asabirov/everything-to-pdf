@@ -24,7 +24,10 @@ Markdown, text and images are converted to local HTML and rendered on the WeasyP
 path, so they keep its guarantees: no JavaScript, no network, resources confined to
 the input's own directory, and the theme governing the output. Relative links resolve
 beside the input file, so a Markdown image sits next to the Markdown. Markdown
-supports tables and fenced code blocks; its headings become bookmarks. Text and code
+supports tables and fenced code blocks; its headings become bookmarks. As Markdown
+normally does, it passes raw HTML through, so a Markdown file can carry its own
+`<style>` block and is trusted exactly as much as an HTML input — the resource
+confinement still applies to anything that HTML asks for. Text and code
 are escaped rather than interpreted and set in monospace, with long lines wrapped. A
 tall image is scaled to fit one page. `--as html|markdown|text|image|webpage` names
 the kind when the extension does not, as with a code file; an unrecognized extension
@@ -37,20 +40,32 @@ JavaScript and fetches nothing over the network. That is a real trade, and the C
 prints it as a notice on every web-page render. A web page loses:
 
 - the theme — `--theme` with a URL is an error, not a silent no-op;
-- the page-number footer, and the theme's paper size and margins: Chrome prints its
-  own Letter paper and default margins, which no flag changes;
+- the page-number footer, and the theme's paper size and margins. The paper comes
+  from the page's own print CSS; Chrome's Letter default applies only when the page
+  declares nothing, and no flag overrides either;
 - the offline guarantee and the resource confinement: Chrome fetches whatever the
   page requests, from wherever, and runs its JavaScript.
 
 It keeps bookmarks from headings, the atomic output replacement, and the reported
-page count. Chrome prints its own error page and still exits 0, so the CLI probes
-the URL first and fails on a name that does not resolve, a refused connection, or a
-missing page; a status that depends on who is asking (401, 403, 405, 406, 409, 429,
-501) is left to Chrome, which asks differently. `--timeout` bounds the render,
-default 90 seconds. Chrome runs with its own sandbox and a throwaway profile, never
-your browser profile; it is still a full browser, so isolate untrusted URLs
-externally. A rendered page reflects one fetch at one moment — record the URL and
-the time with the output.
+page count.
+
+**A web-page render can succeed on the wrong page, so read page 1.** Chrome prints
+whatever it is shown and exits 0 either way — including its own "site can't be
+reached" page. The CLI therefore sends a HEAD request first and fails on a name that
+does not resolve, a refused connection, or a status that means the page is not there.
+Credentials in the URL are forwarded with that request, so `https://user:pass@host/`
+works and a genuine 401 fails. Three things still get through: a redirect to a login
+screen, which answers 200; a bot check, which answers 200; and 403, 405, 406 or 501,
+which can be a block on the HEAD probe rather than on the page, so those are left to
+Chrome and the CLI prints a warning naming the status. The probe also uses Python's
+CA bundle and `*_proxy` variables rather than Chrome's root store and system proxy,
+so on a Python install without its certificates it can refuse an https URL that
+Chrome would render.
+
+`--timeout` bounds the render, default 90 seconds. Chrome runs with its own sandbox
+and a throwaway profile, never your browser profile; it is still a full browser, so
+isolate untrusted URLs externally. A rendered page reflects one fetch at one moment —
+record the URL and the time with the output.
 
 ## Install and run
 

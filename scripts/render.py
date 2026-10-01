@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Render Markdown, text, images, local HTML or a web page as a PDF."""
 import argparse
+from base64 import b64encode
 from contextlib import contextmanager
 import errno
 from html import escape
@@ -14,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,8 +33,13 @@ MAC_BROWSERS = ('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 # Routine platform complaints a headless browser makes whether or not it succeeded.
 BROWSER_NOISE = re.compile(r'dbus|org\.freedesktop|gpu|vulkan|libva|fontconfig|'
                            r'sandbox namespace|egl|gl display', re.I)
-# Statuses that depend on who is asking rather than on the page itself.
-BROWSER_DECIDES = frozenset({401, 403, 405, 406, 409, 429, 501})
+# Statuses a browser can still get past, because it asks differently: a block on
+# the client rather than on the page. 401 is not among them -- any credentials are
+# in the URL, and the probe sends them too, so a 401 is a real refusal.
+BROWSER_DECIDES = frozenset({403, 405, 406, 501})
+# Everything legal in a path or query, so only non-ASCII and spaces get encoded.
+URL_SAFE = "/%:@-._~!$&'()*+,;=?"
+
 
 
 class RenderError(Exception):
@@ -148,13 +154,13 @@ class Diagnostics(logging.Handler):
 
 def input_kind(target, override):
     """`webpage` for an http(s) URL; for a local file the override, or None for now."""
-    scheme = urlsplit(target).scheme.lower()
-    if len(scheme) > 1 and scheme not in ('http', 'https'):
-        raise RenderError('only http and https URLs are supported as web pages')
-    if scheme:
+    if urlsplit(target).scheme.lower() in ('http', 'https'):
         if override not in (None, 'webpage'):
             raise RenderError(f'an http(s) URL is a web page, not {override}')
         return 'webpage'
+    # Only `://` means a URL, so a file named `report:v2.md` stays a file.
+    if '://' in target:
+        raise RenderError('only http and https URLs are supported as web pages')
     if override == 'webpage':
         raise RenderError('--as webpage needs an http(s) URL')
     return override
@@ -310,29 +316,53 @@ def browser_reason(result):
     return compact(lines[-1]) if lines else 'no diagnostic output'
 
 
+def probe_request(url):
+    """urllib needs an ASCII URL and a header for credentials; a browser takes the
+    Unicode form, and credentials embedded in it, exactly as the user typed them."""
+    parts = urlsplit(url)
+    host = parts.hostname or ''
+    try:
+        netloc = host if host.isascii() else host.encode('idna').decode('ascii')
+    except UnicodeError:
+        raise RenderError('web page host is not a usable domain name') from None
+    if parts.port:
+        netloc += f':{parts.port}'
+    headers = {}
+    if parts.username is not None:
+        secret = f'{unquote(parts.username)}:{unquote(parts.password or "")}'
+        headers['Authorization'] = 'Basic ' + b64encode(secret.encode()).decode()
+    return Request(urlunsplit((parts.scheme, netloc, quote(parts.path, safe=URL_SAFE),
+                               quote(parts.query, safe=URL_SAFE), '')),
+                   method='HEAD', headers=headers)
+
+
 def check_reachable(url, timeout):
     """A browser prints its own error page and still exits 0, so probe the URL first.
 
-    Only failures a browser cannot get past stop the render: a name that does not
-    resolve, a refused connection, a page that is not there. A status that depends
-    on who is asking is left to the browser, because the browser asks differently.
+    Failures a browser cannot get past stop the render: a name that does not
+    resolve, a refused connection, a page that is not there. A status blocking the
+    client rather than the page is returned instead, for the caller to warn about,
+    because only the browser can settle it.
     """
     try:
-        with urlopen(Request(url, method='HEAD'), timeout=timeout) as response:
+        with urlopen(probe_request(url), timeout=timeout) as response:
             status = response.status
     except HTTPError as error:
         status = error.code
     except (URLError, OSError, ValueError) as error:
         reason = compact(getattr(error, 'reason', None) or error)
         raise RenderError(f'cannot reach the web page: {reason}') from None
-    if status >= 400 and status not in BROWSER_DECIDES:
-        raise RenderError(f'web page returned HTTP {status}')
+    if status < 400:
+        return None
+    if status not in BROWSER_DECIDES:
+        raise RenderError(f'web page answered HTTP {status} to a HEAD request')
+    return status
 
 
 def render_webpage(url, output, browser, timeout):
     """A second engine: the browser runs the page, so this skill's theme never applies."""
     binary = browser_binary(browser)
-    check_reachable(url, timeout)
+    deferred = check_reachable(url, timeout)
     print('notice: a browser prints web pages, so the print theme, the page-number '
           'footer and the offline resource limits do not apply', file=sys.stderr)
     with filesystem('output', output):
@@ -365,6 +395,10 @@ def render_webpage(url, output, browser, timeout):
         with filesystem('output', output):
             os.replace(temp, output)
         temp = None
+        if deferred:
+            print(f'warning: the URL answered HTTP {deferred} to the HEAD probe, so '
+                  'the browser may have been shown a refusal or login page instead '
+                  'of the document; read page 1 before delivering it', file=sys.stderr)
         return pages
     finally:
         if temp is not None:
