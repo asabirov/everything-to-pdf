@@ -71,8 +71,9 @@ here and stays `xn--fa-hia.de` in Chrome — so for those hosts the probe checks
 different name than Chrome fetches.
 
 `--timeout` bounds the HEAD probe and then the wait for the PDF separately, each at
-90 seconds by default, so a URL that stalls at both steps takes about twice that, plus
-a few seconds to shut the browser down. The CLI does not wait for Chrome to exit:
+90 seconds by default, so a URL that stalls at both steps takes about twice that.
+Shutting the browser down normally takes a fraction of a second, but a browser that
+ignores being asked twice can add 20 seconds. The CLI does not wait for Chrome to exit:
 Chrome writes the finished PDF and then, on macOS, keeps running, so the CLI watches
 for a PDF that is whole and has stopped growing and then ends the browser. When Chrome
 says it could not load the page the CLI stops there and repeats what Chrome said,
