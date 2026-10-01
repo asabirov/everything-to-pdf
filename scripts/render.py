@@ -34,7 +34,8 @@ MAC_BROWSERS = ('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 # Routine platform complaints a headless browser makes whether or not it succeeded.
 BROWSER_NOISE = re.compile(r'dbus|org\.freedesktop|gpu|vulkan|libva|fontconfig|'
                            r'sandbox namespace|egl|gl display|allocator|'
-                           r'cvdisplaylink|parsing certificate|parsing extensions', re.I)
+                           r'cvdisplaylink|parsing certificate|parsing extensions|'
+                           r'task_policy_set|os/kern', re.I)
 # Statuses a browser can still get past, because it asks differently: a block on
 # the client rather than on the page. 401 is not among them: this skill sends no
 # credentials, so a page that demands them is one the browser cannot print either.
@@ -48,6 +49,9 @@ BROWSER_GRACE = 10
 # browser abandoned in a second would wait out the whole timeout, because on macOS it
 # does not exit to report the failure.
 BROWSER_GAVE_UP = re.compile(r'page load failed', re.I)
+# Chrome stamps every line with [pid:tid:date/time:LEVEL:file:line], 95 characters of
+# it, which would crowd the actual complaint out of a bounded reason.
+BROWSER_STAMP = re.compile(r'^\[\d+:\d+:\d{4}/\d{6}\.\d+:\w+:[^\]]+\]\s*')
 # Everything legal in a path or query, so only non-ASCII and spaces get encoded.
 URL_SAFE = "/%:@-._~!$&'()*+,;=?"
 
@@ -328,7 +332,19 @@ def browser_reason(output):
     """The browser's own complaint, without the platform noise it always prints."""
     lines = [line for line in output.splitlines()
              if line.strip() and not BROWSER_NOISE.search(line)]
-    return compact(lines[-1]) if lines else 'no diagnostic output'
+    return compact(BROWSER_STAMP.sub('', lines[-1])) if lines else 'no diagnostic output'
+
+
+def browser_verdict(output):
+    """The browser's own line saying it will never print this page, if it said so.
+
+    Not simply the last line: the browser keeps complaining about the platform after
+    it has given up, and those complaints are not the reason.
+    """
+    for line in reversed(output.splitlines()):
+        if BROWSER_GAVE_UP.search(line):
+            return compact(BROWSER_STAMP.sub('', line))
+    return None
 
 
 def finished_pdf(path):
@@ -348,29 +364,48 @@ def finished_pdf(path):
     return size if head.startswith(b'%PDF') and b'%%EOF' in tail else None
 
 
-def signal_browser(process, number):
-    """Signal the browser and the helpers it started, which share its session."""
+def signal_session(process, number):
+    """Signal what is left of the browser's session; False once nothing is.
+
+    Its own session makes the browser the group leader, so its pid names the group
+    even after it has been reaped. Never signal our own group: were the browser
+    somehow in it, that would kill this process and whatever started it.
+    """
     try:
-        os.killpg(os.getpgid(process.pid), number)
-    except (OSError, AttributeError):   # already gone, or no process groups here
-        process.send_signal(number)
+        if process.pid == os.getpgrp():
+            return False
+        os.killpg(process.pid, number)
+    except (OSError, AttributeError):   # the group is empty, or there are no groups
+        return False
+    return True
 
 
 def end_browser(process):
-    """Ask the browser to stop, and insist if it will not.
+    """Stop the browser, then everything it started, before the profile is removed.
 
-    Signalling the browser alone leaves a renderer behind: it is reparented to init
-    and outlives the CLI. The browser is given its own session so one signal reaches
-    everything it started.
+    Signalling the whole session at once makes the browser relaunch a service as it
+    shuts down, and that replacement arrives after the signal, so it is never told to
+    stop: it outlives the wait and re-creates the profile directory the caller has
+    just removed. The browser goes first and is waited for, and only then is the rest
+    of its session swept, until nothing is left.
     """
-    if process.poll() is not None:
-        return
-    signal_browser(process, signal.SIGTERM)
-    try:
-        process.wait(timeout=BROWSER_GRACE)
-    except subprocess.TimeoutExpired:
-        signal_browser(process, signal.SIGKILL)
-        process.wait()
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=BROWSER_GRACE)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+    deadline = time.monotonic() + BROWSER_GRACE
+    while True:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return
+        # Patience first, then force, for whatever the browser left behind.
+        if not signal_session(process, signal.SIGTERM if left > BROWSER_GRACE / 2
+                              else signal.SIGKILL):
+            return
+        time.sleep(0.05)
 
 
 def print_with_browser(command, target, timeout):
@@ -381,17 +416,24 @@ def print_with_browser(command, target, timeout):
     PDF that is whole and has stopped growing is the finished print, so end the
     browser rather than waiting for it to agree.
     """
-    with tempfile.TemporaryFile(mode='w+', errors='replace') as log:
-        try:
-            process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
-                                       start_new_session=True)
-        except OSError as error:
-            raise RenderError(f'cannot run the browser: '
-                              f'{compact(error.strerror or type(error).__name__)}') from None
+    with tempfile.TemporaryDirectory(prefix='everything-to-pdf-log-') as room:
+        trail = Path(room) / 'browser.log'
 
         def diagnostics():
-            log.seek(0)
-            return log.read()
+            """A fresh handle each time: sharing the browser's would move the offset
+            it writes at, and its next line would land on top of an earlier one."""
+            try:
+                return trail.read_text(errors='replace')
+            except OSError:
+                return ''
+
+        with trail.open('w') as log:
+            try:
+                process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
+                                           start_new_session=True)
+            except OSError as error:
+                raise RenderError(f'cannot run the browser: '
+                                  f'{compact(error.strerror or type(error).__name__)}') from None
 
         deadline = time.monotonic() + timeout
         settled = None
@@ -407,10 +449,9 @@ def print_with_browser(command, target, timeout):
                 if size is not None:
                     if size == settled:
                         return diagnostics()
-                elif BROWSER_GAVE_UP.search(diagnostics()):
-                    # Only once there is no PDF: a written one is the answer regardless.
-                    raise RenderError('browser could not load the page: '
-                                      f'{browser_reason(diagnostics())}')
+                # Only once there is no PDF: a written one is the answer regardless.
+                elif (verdict := browser_verdict(diagnostics())) is not None:
+                    raise RenderError(f'browser could not load the page: {verdict}')
                 settled = size
                 if time.monotonic() >= deadline:
                     raise RenderError(f'web page did not finish within {timeout:g}s '
