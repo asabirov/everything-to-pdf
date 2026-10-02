@@ -93,7 +93,7 @@ class Rendering(unittest.TestCase):
                     self.assertIn('Service name', page.get_text())
 
     def test_theme_geometry_and_invalid_theme_preserve_pdf(self):
-        default = (ROOT / 'assets/design-system.md').read_text()
+        default = (ROOT / 'assets/print-theme.md').read_text()
         self.run_cli('<h1>Theme sample</h1><p>Preserved content</p><small>Secondary</small>')
         with pymupdf.open(self.pdf) as doc:
             original_width = doc[0].rect.width
@@ -312,7 +312,7 @@ class Rendering(unittest.TestCase):
         # A browser prints its own error or refusal page and still exits 0;
         # none of these may reach the output.
         prior = self.pdf.read_bytes()
-        self.run_input(url, '--theme', ROOT / 'assets/design-system.md', success=False)
+        self.run_input(url, '--theme', ROOT / 'assets/print-theme.md', success=False)
         self.run_input(url + 'missing.html', success=False, timeout=60)
         result = self.run_input(url + 'denied', success=False, timeout=60)
         self.assertIn('401', result.stderr)
