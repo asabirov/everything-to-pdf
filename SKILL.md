@@ -2,7 +2,7 @@
 name: everything-to-pdf
 description: Use when converting Markdown, plain text or code, an image, local static HTML, or a web page into a PDF. Local inputs get a themed, paginated WeasyPrint render; a web page is printed by headless Chrome and loses the theme. Excludes office documents and editing existing PDFs.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 Convert the user's input without rewriting or summarizing its content. Run the
@@ -46,14 +46,13 @@ wrong page. When the probe got such a status the CLI warns and names it; check t
 text regardless. A URL carrying credentials (`user:pass@host`) is refused outright —
 save such a page from a browser and render the saved file.
 
-For local inputs, choose the theme before rendering in this order: **explicit user theme >
-relevant project design system > bundled Geist print fallback**. First, check the project
-instructions and any design or token files they name. Read the project's own
-design system at `docs/design-system.md` even if no instructions point to it. Do not look
-for any other project design file. Keep this check bounded; do not search recursively.
-Then check the available skill catalog for a matching brand. Read only the relevant skill
-and its linked color, type and print references; do not crawl the filesystem or load
-unrelated skills. Optional matches
+For local inputs, choose the theme before rendering in this order: **explicit user
+theme > relevant project design system > bundled Geist print fallback**. First, check
+the project instructions and any design or token files they name. Read the project's
+own design system at `docs/design-system.md` even if no instructions point to it. Do
+not look for any other project design file. Then check the available skill catalog for
+a matching brand. Read only the relevant skill and its linked color, type and print
+references; do not crawl the filesystem or load unrelated skills. Optional matches
 include `internal-tool-design` (also `internal-tool:design` / internal-tool plugin `design`) and
 `private-org-design`; check the actual name and project/brand before using either.
 Prefer the system's print/light guidance over a dark web default. If an explicitly
