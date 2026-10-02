@@ -127,16 +127,16 @@ deleted.
 The theme applies to every input except a web page. Theme selection is authoring-time
 guidance in [SKILL.md](SKILL.md): explicit user
 theme first, then the relevant project's design system, then the bundled Geist
-print fallback. Discovery is bounded to project instructions/referenced files,
-obvious local sources (root design/token files and a known styles folder), and the
-available skill catalog; it does not recursively crawl the project. Optional design skills such as `lessly-design`
+print fallback. Discovery is limited to project instructions, the design
+files they name, the project's own `docs/design-system.md`, and the available skill
+catalog; it does not crawl the project. Optional design skills such as `lessly-design`
 (`lessly:design` / Lessly plugin `design`) and `apliteni-design` apply only to their
 matching project/brand; none is required. Use relevant print/light guidance and
 report missing explicitly requested sources instead of silently falling back.
 
-Copy [assets/design-system.md](assets/design-system.md) into the user's project,
+Copy [assets/print-theme.md](assets/print-theme.md) into the user's project,
 adapt the design tokens once into its complete JSON schema, record the source and
-print choices in its prose, then reuse it with `--theme /path/to/design-system.md`.
+print choices in its prose, then reuse it with `--theme /path/to/print-theme.md`.
 An explicit compatible theme can be used directly. The default file cites official
 Vercel Geist light sRGB colors and separates them from this skill's print adaptations;
 it is not a full Geist component or typography implementation. The CLI performs no
