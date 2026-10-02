@@ -46,14 +46,14 @@ wrong page. When the probe got such a status the CLI warns and names it; check t
 text regardless. A URL carrying credentials (`user:pass@host`) is refused outright —
 save such a page from a browser and render the saved file.
 
-For local inputs, choose the theme before rendering: **explicit user theme > relevant
-project design system > bundled Geist print fallback**. At authoring time, check project
-instructions and their referenced design/token files. Also inspect obvious project-local
-sources even if unreferenced: root `DESIGN.md`, `design-system.md`, token files, and files
-directly inside a known styles folder. Keep this a bounded check, not a recursive
-search. Then check the available skill catalog for a matching brand. Read only the
-relevant skill and its linked color, type and print references; do not crawl the
-filesystem or load unrelated skills. Optional matches
+For local inputs, choose the theme before rendering in this order: **explicit user theme >
+relevant project design system > bundled Geist print fallback**. First, check the project
+instructions and any design or token files they name. Read the project's own
+design system at `docs/design-system.md` even if no instructions point to it. Do not look
+for any other project design file. Keep this check bounded; do not search recursively.
+Then check the available skill catalog for a matching brand. Read only the relevant skill
+and its linked color, type and print references; do not crawl the filesystem or load
+unrelated skills. Optional matches
 include `internal-tool-design` (also `internal-tool:design` / internal-tool plugin `design`) and
 `private-org-design`; check the actual name and project/brand before using either.
 Prefer the system's print/light guidance over a dark web default. If an explicitly
@@ -62,7 +62,7 @@ missing source or choice; do not silently substitute Geist. If no relevant proje
 system is found, use the fallback and say so.
 
 Adapt a selected design system once into a theme file in the user's project: copy
-[assets/design-system.md](assets/design-system.md), map the project's tokens into
+[assets/print-theme.md](assets/print-theme.md), map the project's tokens into
 its complete JSON schema, retain suitable print defaults for unspecified values,
 and record the source and print adaptations in the prose. Pass that file with
 `--theme`; reuse it on subsequent renders. A requested theme already in this schema
@@ -78,13 +78,13 @@ From the skill directory:
 
 ```sh
 ~/.local/share/everything-to-pdf/venv/bin/python scripts/render.py NOTES.md OUT.pdf
-~/.local/share/everything-to-pdf/venv/bin/python scripts/render.py IN.html OUT.pdf --theme /path/to/design-system.md
+~/.local/share/everything-to-pdf/venv/bin/python scripts/render.py IN.html OUT.pdf --theme /path/to/print-theme.md
 ~/.local/share/everything-to-pdf/venv/bin/python scripts/render.py helper.py OUT.pdf --as text
 ~/.local/share/everything-to-pdf/venv/bin/python scripts/render.py https://example.com/page OUT.pdf
 ```
 
 The output directory must exist. Store inputs, output, themes, venvs and inspection
-images outside the installed package. Read [assets/design-system.md](assets/design-system.md)
+images outside the installed package. Read [assets/print-theme.md](assets/print-theme.md)
 when designing or changing the theme: prose guides authoring, its one strict JSON
 block controls the print defaults. Author HTML/CSS retains normal cascade precedence.
 Keep custom document CSS in the source or a linked local stylesheet.

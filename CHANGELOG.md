@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The bundled print theme moved to `assets/print-theme.md`.** It was previously `assets/design-system.md`, which conflicted with the design system a project keeps at `docs/design-system.md`. Pass the renamed file, or your copy of it, with `--theme`.
+
+- **The skill reads a project's design system from `docs/design-system.md`.** It no longer looks for a design file at the repository root.
+
 ## 0.2.0 — 2026-10-01
 
 The skill is now `everything-to-pdf`: it converts Markdown, plain text or code, an image, local static HTML, or a web page.
