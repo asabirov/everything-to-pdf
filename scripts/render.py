@@ -579,7 +579,7 @@ def main():
             pages = render_webpage(args.input, args.output, args.browser, args.timeout)
         else:
             pages = render(Path(args.input), args.output,
-                           args.theme or ROOT / 'assets/design-system.md', kind)
+                           args.theme or ROOT / 'assets/print-theme.md', kind)
     except RenderError as error:
         print(f'error: {error}', file=sys.stderr)
         return 1
