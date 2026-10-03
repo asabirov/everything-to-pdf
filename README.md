@@ -59,8 +59,8 @@ local HTML gets. Markdown supports tables and fenced code blocks, and its headin
 become PDF bookmarks. It passes raw HTML through, so a Markdown file can carry its own
 `<style>` block and is trusted as much as an HTML file. Text and code are escaped, set
 in monospace, and wrapped. A tall image is scaled to fit one page. An unknown
-extension fails and asks for `--as html|markdown|text|image|webpage` instead of
-guessing.
+extension fails and asks for `--as` with one of `html`, `image`, `markdown` or
+`text` instead of guessing.
 
 ### Web pages are the exception
 
@@ -251,7 +251,8 @@ nested and embedded resources, refused and broken assets, warnings and output
 recovery. The web-page test serves a JavaScript page on localhost; it is skipped
 when no browser is installed, so a pass on such a machine covers one test fewer.
 Rendering and testing need no agent API and no outbound network. GitHub Actions does
-not run these tests, so run them before opening a pull request.
+not run these tests and nothing else blocks a broken commit, so run them before
+opening a pull request.
 
 ### Update and remove
 
