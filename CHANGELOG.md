@@ -8,6 +8,12 @@
 
 - **The skill reads a project's design system from `docs/design-system.md`.** It no longer looks for a design file at the repository root.
 
+- **Brand design skills are no longer named.** The skill still checks the skill catalog for a design skill matching the project's brand, but no longer lists specific private ones.
+
+### Added
+
+- **MIT licence.**
+
 ## 0.2.0 — 2026-10-01
 
 The skill is now `everything-to-pdf`: it converts Markdown, plain text or code, an image, local static HTML, or a web page.

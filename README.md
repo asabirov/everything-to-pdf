@@ -1,214 +1,266 @@
 # everything-to-pdf
 
-An agent skill and deterministic CLI that turns Markdown, plain text or code, an
-image, local static HTML, or a web page into a PDF. Local inputs render with
-WeasyPrint 69.0 through a minimalist, themeable print stylesheet; a web page is
-printed by headless Chrome, which is a different engine with different guarantees.
-The skill keeps the supplied content intact: it does not summarize, edit existing
-PDFs, or operate an LLM rendering loop. It does not promise arbitrary browser CSS
-fidelity or PDF/UA conformance.
+Convert Markdown, text or code, images, local HTML or a web page to PDF.
 
-The skill version lives in `metadata.version` in `SKILL.md`.
+It is an agent skill ([SKILL.md](SKILL.md)) with a deterministic command-line
+renderer behind it. The agent picks a theme and runs the renderer once; the
+renderer turns the input into a paginated PDF without changing its content.
 
-## Inputs
+![Page 1 of the bundled example, rendered with the default theme](docs/example-page-1.png)
+
+*Page 1 of [examples/monthly-finops.html](examples/monthly-finops.html), rendered
+with the bundled theme. The company and figures are synthetic.*
+
+## Why it exists, and what it turned down
+
+An agent asked for a PDF should hand back the document it was given, laid out for
+print, not a rewritten version of it. This skill renders the supplied content as it
+is, in one deterministic pass.
+
+What it does not do:
+
+- **No LLM rendering loop.** The model chooses the theme. The renderer does the rest.
+- **No browser for local files.** Local inputs go through WeasyPrint, which runs no
+  JavaScript and fetches nothing from the network. Only a web page needs a browser.
+- **No summarizing or editing.** It does not shorten content, edit existing PDFs or
+  convert office documents.
+- **No promises it can't keep.** It does not promise browser-perfect CSS, PDF/UA
+  conformance, or byte-identical output across platforms or renderer and font
+  upgrades.
+
+## The design
+
+### Two engines
+
+The input decides the engine, and the engine decides what you get.
+
+```mermaid
+flowchart LR
+    md[Markdown] --> html[Local HTML]
+    txt[Text or code] --> html
+    img[Image] --> html
+    file[HTML file] --> html
+    html --> wp["WeasyPrint<br>themed, offline, files confined"]
+    url[http/https URL] --> probe[HEAD probe] --> chrome["Headless Chrome<br>no theme, runs JavaScript"]
+    wp --> pdf[PDF]
+    chrome --> pdf
+```
 
 | Input | Recognized by | Engine | Theme |
 | --- | --- | --- | --- |
-| Local static HTML | `.html`, `.htm` | WeasyPrint | applies |
+| Local HTML | `.html`, `.htm` | WeasyPrint | applies |
 | Markdown | `.md`, `.markdown` | WeasyPrint | applies |
-| Plain text, code | `.txt`, `.text`, `.log`, `--as text` | WeasyPrint | applies |
+| Text, code | `.txt`, `.text`, `.log`, or `--as text` | WeasyPrint | applies |
 | Image | `.png`, `.jpg`, `.jpeg`, `.gif`, `.svg`, `.webp` | WeasyPrint | applies |
-| Web page | an `http`/`https` URL | headless Chrome | does not apply |
+| Web page | an http or https URL | headless Chrome | does not apply |
 
-Markdown, text and images are converted to local HTML and rendered on the WeasyPrint
-path, so they keep its guarantees: no JavaScript, no network, resources confined to
-the input's own directory, and the theme governing the output. Relative links resolve
-beside the input file, so a Markdown image sits next to the Markdown. Markdown
-supports tables and fenced code blocks; its headings become bookmarks. As Markdown
-normally does, it passes raw HTML through, so a Markdown file can carry its own
-`<style>` block and is trusted exactly as much as an HTML input — the resource
-confinement still applies to anything that HTML asks for. Text and code
-are escaped rather than interpreted and set in monospace, with long lines wrapped. A
-tall image is scaled to fit one page. `--as html|markdown|text|image|webpage` names
-the kind when the extension does not, as with a code file; an unrecognized extension
-fails and asks for `--as` rather than guessing.
+Markdown, text and images are turned into local HTML first, so they get everything
+local HTML gets. Markdown supports tables and fenced code blocks, and its headings
+become PDF bookmarks. It passes raw HTML through, so a Markdown file can carry its own
+`<style>` block and is trusted as much as an HTML file. Text and code are escaped, set
+in monospace, and wrapped. A tall image is scaled to fit one page. An unknown
+extension fails and asks for `--as html|markdown|text|image|webpage` instead of
+guessing.
 
-## Web pages
+### Web pages are the exception
 
-A web page goes through Chrome or Chromium instead, because WeasyPrint runs no
-JavaScript and fetches nothing over the network. That is a real trade, and the CLI
-prints it as a notice on every web-page render. A web page loses:
+WeasyPrint can't run JavaScript or fetch from the network, so a URL goes to Chrome or
+Chromium. The CLI prints a notice on every web-page render, because the PDF loses:
 
-- the theme — `--theme` with a URL is an error, not a silent no-op;
-- the page-number footer, and the theme's paper size and margins. The paper comes
-  from the page's own print CSS; Chrome's Letter default applies only when the page
-  declares nothing, and no flag overrides either;
-- the offline guarantee and the resource confinement: Chrome fetches whatever the
-  page requests, from wherever, and runs its JavaScript.
+- the theme: `--theme` with a URL is an error;
+- the page-number footer and the theme's paper size and margins. The page's own print
+  CSS sets the paper, or Chrome's Letter default if it sets nothing;
+- the offline guarantee and file confinement. Chrome fetches whatever the page asks
+  for and runs its scripts.
 
-It keeps bookmarks from headings, the atomic output replacement, and the reported
-page count.
+It keeps bookmarks from headings, the atomic output replacement and the page count.
 
-**A web-page render can succeed on the wrong page, so read page 1.** Chrome prints
-whatever it is shown and exits 0 either way — including its own "site can't be
-reached" page. The CLI therefore sends a HEAD request first and fails on a name that
-does not resolve, a refused connection, a status that means the page is not there, or
-redirects that never arrive anywhere. Two things still get through: a login screen or
-a bot check, both of which answer 200; and 403, 405, 406 or 501, which can be a block
-on the HEAD probe rather than on the page, so those are left to Chrome and the CLI
-prints a warning naming the status.
+**Chrome exits 0 even when it printed the wrong page, so read page 1.** Before
+starting Chrome, the CLI sends a HEAD request. It fails on a name that does not
+resolve, a refused connection, an error status, or a redirect loop. Two cases still
+get through. A login screen or bot check answers 200. A 403, 405, 406 or 501 may be
+blocking the probe rather than the page, so the CLI passes it to Chrome and prints a
+warning naming the status.
 
-**A URL carrying credentials is refused.** `https://user:pass@host/` fails with a
-message rather than being fetched; this skill prints pages that are open to it. For a
-page behind a login, save it from your own browser and render the saved file.
+A URL with credentials (`https://user:pass@host/`) is refused. For a page behind a
+login, save it from your browser and render the saved file.
 
-Two things make the probe see a slightly different internet from Chrome's. It uses
-Python's CA bundle and `*_proxy` variables rather than Chrome's root store and system
-proxy, so on a Python install without its certificates it can refuse an https URL
-Chrome would render. And it resolves an internationalized host with Python's IDNA
-codec, which differs from Chrome's for a few characters — `faß.de` becomes `fass.de`
-here and stays `xn--fa-hia.de` in Chrome — so for those hosts the probe checks a
-different name than Chrome fetches.
+The probe and Chrome see slightly different networks. The probe uses Python's CA
+bundle and the `*_proxy` variables, not Chrome's root store and system proxy. It also
+encodes international host names with Python's IDNA codec, which differs from
+Chrome's for a few characters: `faß.de` becomes `fass.de` here but `xn--fa-hia.de` in
+Chrome.
 
-`--timeout` bounds the HEAD probe and then the wait for the PDF separately, each at
-90 seconds by default, so a URL that stalls at both steps takes about twice that.
-Shutting the browser down normally takes a fraction of a second, but a browser that
-ignores being asked twice can add 20 seconds. The CLI does not wait for Chrome to exit:
-Chrome writes the finished PDF and then, on macOS, keeps running, so the CLI watches
-for a PDF that is whole and has stopped growing and then ends the browser. When Chrome
-says it could not load the page the CLI stops there and repeats what Chrome said,
-rather than waiting out the timeout — but Chrome stays silent on some runs, so the
-timeout is still the backstop. Chrome prints when the page finishes loading, so
-whatever a script adds more than about half a second later is missing from the PDF.
+`--timeout` (default 90 seconds) bounds the probe and the wait for the PDF separately,
+so a URL that stalls at both takes about twice as long. On macOS Chrome keeps running
+after it writes the PDF. The CLI therefore waits until the file is complete and has
+stopped growing, then ends the browser. Normally that takes a fraction of a second,
+but a browser that ignores two requests to quit can add 20 seconds. If Chrome reports
+that it could not load the page, the CLI stops and repeats Chrome's message. Chrome
+prints once the page has loaded, so anything a script adds more than about half a
+second later is missing.
 
-Chrome runs with its own sandbox and a throwaway profile, never your browser profile;
-it is still a full browser, so isolate untrusted URLs externally. A rendered page
-reflects one fetch at one moment — record the URL and the time with the output.
+Chrome runs with its own sandbox and a throwaway profile, never yours. It is still a
+full browser, so isolate untrusted URLs externally. A web PDF shows one fetch at one
+moment; record the URL and the time with it.
 
-## Install and run
+### Themes
 
-Use Python 3.10+ and the native Pango/font dependencies from the
-[WeasyPrint installation guide](https://doc.courtbouillon.org/weasyprint/v69.0/first_steps.html#installation).
-On Debian/Ubuntu, a typical prerequisite setup is:
+For local inputs the agent picks the theme in this order: a theme the user names,
+then the project's own design system, then the bundled fallback. To find a design
+system it reads the project instructions, the design files they name,
+`docs/design-system.md`, and the available skill catalog for a matching brand design
+skill. It does not crawl the project. If the user asked for a theme that can't be
+found, the agent reports it instead of quietly using the fallback.
+
+A theme is a Markdown file with one strict JSON block. Copy
+[assets/print-theme.md](assets/print-theme.md) into your project, map your design
+tokens into its JSON once, note the source in its prose, and pass it with
+`--theme /path/to/print-theme.md`. Only the JSON affects rendering. Unknown,
+duplicate, unsafe or malformed tokens fail before any output is written.
+
+The bundled fallback uses the light sRGB grays from
+[Vercel Geist](https://vercel.com/geist/colors) with print choices of its own: A4,
+18 mm margins, 10 pt generic sans-serif. It does not ship Geist fonts. The CLI never
+discovers design systems, looks anything up online or downloads fonts. Without
+`--theme` it always uses the fallback.
+
+`typography.family` accepts only `sans-serif`, `serif` or `monospace`. For a brand
+font, add `@font-face` in the source CSS or a linked local stylesheet, with font files
+you are allowed to use placed beside the input. Remote font URLs are blocked. Text,
+code and image inputs have a small stylesheet of their own that the theme does not
+override.
+
+Source CSS takes precedence over the skill's defaults. Put custom CSS inline or in a
+linked local stylesheet; there is no CSS flag. Headings become bookmarks, table
+headers repeat across pages, and rows try to stay together. Wide tables, long rows,
+fixed positioning and fixed-height boxes can still overflow, so look at the pages.
+The converter never hides or rewrites content, but source CSS can hide it. For local
+inputs, scripts, video and interactive widgets do not render.
+
+### Files and trust
+
+For a local input, resources resolve against the real input file, and a linked
+stylesheet resolves against itself. For a symlinked input, assets belong beside the
+target, not the symlink. Allowed resources are embedded `data:` URIs and regular files
+inside the input's own directory tree. Network resources, parent traversal and
+symlinks pointing outside fail the render. Move shared assets into that tree rather
+than widening access. A missing image or stylesheet fails the render. Unsupported CSS
+only produces a warning. Plain hyperlinks stay links and are not fetched. Diagnostics
+stop at six messages plus a count, and embedded data URIs are redacted.
+
+This is not a sandbox for hostile input. Native libraries, system fonts, resource
+exhaustion and files changing mid-render are outside these checks. For untrusted
+documents or URLs, use external filesystem and network isolation with CPU, memory and
+time limits, and don't render mutually untrusted tenants in one process.
+
+Output is written to a temporary file in the target directory and then moved into
+place. A failed render leaves an earlier PDF untouched. A killed process can leave a
+`.everything-to-pdf-*.pdf` file behind; it is safe to delete.
+
+## What's where
+
+| Path | What it owns |
+| --- | --- |
+| [SKILL.md](SKILL.md) | What the agent does: choosing the engine and theme, what to tell the user, how to check the PDF. Holds the skill version. |
+| [scripts/render.py](scripts/render.py) | The renderer and CLI. It reads only the theme it is given; all theme discovery happens in the agent. |
+| [assets/print-theme.md](assets/print-theme.md) | The bundled fallback theme, and the template for your own. |
+| [examples/monthly-finops.html](examples/monthly-finops.html) | A synthetic report to try the renderer on. It is an example, not a template. |
+| [tests/test_render.py](tests/test_render.py) | Tests that render real PDFs and inspect them with PyMuPDF. |
+| [CHANGELOG.md](CHANGELOG.md) | Changes by version. |
+
+## How to run and verify it
+
+### Install
+
+You need Python 3.10 or later and WeasyPrint's native Pango and font libraries; see
+the [WeasyPrint installation guide](https://doc.courtbouillon.org/weasyprint/v69.0/first_steps.html#installation).
+On macOS, Homebrew supplies them. On Debian or Ubuntu:
 
 ```sh
 sudo apt-get install python3-venv libpango-1.0-0 libpangoft2-1.0-0 fonts-dejavu-core
 ```
 
-Web pages additionally need Google Chrome or Chromium. The CLI looks for
-`google-chrome`, `google-chrome-stable`, `chromium` or `chromium-browser` on `PATH`,
-then the standard macOS application paths, or takes `--browser PATH`. Nothing else
-in the skill needs a browser.
+Web pages also need Google Chrome or Chromium. The CLI looks for `google-chrome`,
+`google-chrome-stable`, `chromium` or `chromium-browser` on `PATH`, then the standard
+macOS application paths. `--browser PATH` overrides that. Nothing else needs a
+browser.
 
-Copy this folder, named `everything-to-pdf`, into your agent's skills directory (for
-Codex, `${CODEX_HOME:-$HOME/.codex}/skills/everything-to-pdf`). No installer runs
-automatically. Keep the virtual environment outside the package:
+Copy this folder into your agent's skills directory as `everything-to-pdf` (for
+Codex, `${CODEX_HOME:-$HOME/.codex}/skills/everything-to-pdf`). No installer runs.
+Keep the virtual environment outside the skill folder:
 
 ```sh
 python3 -m venv ~/.local/share/everything-to-pdf/venv
 ~/.local/share/everything-to-pdf/venv/bin/pip install -r /path/to/everything-to-pdf/requirements.txt
-mkdir -p /path/to/output
-~/.local/share/everything-to-pdf/venv/bin/python /path/to/everything-to-pdf/scripts/render.py \
-  /path/to/source/report.html /path/to/output/report.pdf
 ```
 
-`requirements.txt` pins WeasyPrint and Markdown; Markdown is pure Python and needs
-no system libraries. Run the synthetic example using `examples/monthly-finops.html`
-as input. The CLI prints the page count and complete JSON-escaped output path,
-compact warnings to stderr, and exits 0 on success or 1 on render/validation failure
-(2 for CLI syntax). The output directory must already
-exist. Output is replaced atomically from a temporary file in the same directory;
-failed renders leave any prior PDF intact. Temporary files are removed on ordinary
-failure; a killed process may leave a `.everything-to-pdf-*.pdf` file that can be
-deleted.
+[requirements.txt](requirements.txt) pins WeasyPrint and Markdown. It pins the
+renderer, not its own dependencies, your browser or your system fonts.
 
-## Theme and layout
-
-The theme applies to every input except a web page. Theme selection is authoring-time
-guidance in [SKILL.md](SKILL.md): explicit user
-theme first, then the relevant project's design system, then the bundled Geist
-print fallback. Discovery is limited to project instructions, the design
-files they name, the project's own `docs/design-system.md`, and the available skill
-catalog; it does not crawl the project. Optional design skills such as `lessly-design`
-(`lessly:design` / Lessly plugin `design`) and `apliteni-design` apply only to their
-matching project/brand; none is required. Use relevant print/light guidance and
-report missing explicitly requested sources instead of silently falling back.
-
-Copy [assets/print-theme.md](assets/print-theme.md) into the user's project,
-adapt the design tokens once into its complete JSON schema, record the source and
-print choices in its prose, then reuse it with `--theme /path/to/print-theme.md`.
-An explicit compatible theme can be used directly. The default file cites official
-Vercel Geist light sRGB colors and separates them from this skill's print adaptations;
-it is not a full Geist component or typography implementation. The CLI performs no
-design-system discovery, network lookup, or font download. Without `--theme` it
-always uses the bundled fallback. Markdown prose in the theme file is author
-guidance, not rendered content; no Markdown/YAML parser is used to read it.
-Unknown, duplicate, unsafe or malformed tokens fail before output replacement.
-The same inputs and environment follow the same rules; byte-for-byte reproducibility
-across platforms or renderer/font upgrades is not promised, and a web page is not
-reproducible at all. This pins the renderer, not its transitive dependencies, the
-installed browser, or system fonts.
-
-The JSON `typography.family` accepts only `sans-serif`, `serif`, or `monospace`.
-For actual brand fonts, retain or add source CSS or a linked local stylesheet with
-`@font-face` and the appropriate `font-family`. Stage existing font assets you are
-permitted to use under the input's resolved parent directory, alongside any
-required local stylesheets; remote font URLs are blocked. Disclose missing fonts
-and any fallback used instead of claiming brand typography fidelity. Text, code and
-image inputs carry a small stylesheet of their own — monospace for text, a one-page
-cap for an image — which the theme does not override.
-
-Source author CSS has normal precedence over the skill's user-origin defaults.
-Use an inline style or a linked local stylesheet for custom CSS; there is no separate
-CSS flag. Headings provide bookmarks, `thead` repeats across table pages, and rows
-prefer to stay together. Long rows, wide tables, fixed positioning and fixed-height
-containers can still overflow: inspect the resulting pages. No content is rewritten
-or deliberately hidden by the converter, but source CSS can hide content and only
-static print-visible content appears. For local inputs, scripts, videos and
-interactive widgets are not supported; a web page runs them. Font availability
-affects rendering and glyph coverage.
-
-## Resources and trust boundary
-
-For local inputs, files resolve relative to the real input file (and linked stylesheets
-relative to themselves).
-For a symlinked input, assets belong beside its target, not beside the symlink.
-Only regular files inside the resolved parent directory and embedded `data:`
-resources are allowed; network/remote-file resources and escaping symlinks fail.
-Move shared assets into that source tree instead of broadening permissions. Fetch
-failures and renderer errors fail the conversion, including missing images/CSS;
-unsupported CSS warnings are reported without aborting. This covers resources the
-renderer actually requests, not an audit of unused CSS URLs or ordinary hyperlinks.
-Diagnostics are capped at six messages plus a count and bound resource identifiers and redact embedded data URIs.
-None of this applies to a web page: Chrome enforces its own boundary, not this one.
-
-This is **not a hostile-input sandbox**. Native libraries, system font discovery,
-resource exhaustion, and concurrently changed input files remain outside these
-checks. For untrusted documents and for any untrusted URL, use external
-filesystem/network isolation and CPU/memory/time limits. Do not render mutually
-untrusted tenants in the same process. The CLI stores no runtime state inside the
-installed package.
-
-## Update, rollback, remove
-
-Save the current skill folder and external venv as a matched backup before updating.
-Replace the skill folder with a reviewed release, create a new external venv from
-its requirements, and run the example and tests before switching your invocation.
-Rollback by restoring that folder and using its matching old venv. Remove the skill
-folder to uninstall discovery, then remove its external venv if no longer needed;
-project sources, themes and PDFs remain yours and are not deleted by the skill.
-
-## Tests
-
-Tests use stdlib unittest plus test-only PyMuPDF to inspect actual PDFs:
+### Render the example
 
 ```sh
-/path/to/venv/bin/pip install -r requirements-test.txt
-PYTHONDONTWRITEBYTECODE=1 /path/to/venv/bin/python -m unittest discover -s tests -v
+cd /path/to/everything-to-pdf
+mkdir -p /tmp/out
+~/.local/share/everything-to-pdf/venv/bin/python scripts/render.py examples/monthly-finops.html /tmp/out/report.pdf
 ```
 
-The suite checks content/pagination/bookmarks, theme geometry and validation,
-Markdown/text/image inputs, local/nested/embedded resources, denied or broken assets,
-warnings and output recovery. The web-page test serves a JavaScript page on localhost
-and is skipped when no browser is installed. No agent API or outbound network
-connection is required to render or test.
+```text
+rendered 2 page(s): "/tmp/out/report.pdf"
+```
+
+The image at the top of this page is page 1 of that PDF. The output directory must
+already exist. The CLI prints the page count and the JSON-escaped output path, sends
+warnings to stderr, and exits with:
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | PDF written |
+| 1 | Render or validation failed; an earlier PDF is untouched |
+| 2 | Wrong command-line syntax |
+
+Other forms, run with the same Python from the skill folder:
+
+```sh
+render.py NOTES.md OUT.pdf
+render.py IN.html OUT.pdf --theme /path/to/print-theme.md
+render.py helper.py OUT.pdf --as text
+render.py https://example.com/page OUT.pdf
+```
+
+### Run the tests
+
+The tests need PyMuPDF to read the PDFs back. Without it the suite stops at an import
+error.
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install -r requirements-test.txt
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -v
+```
+
+```text
+Ran 6 tests in 26.386s
+
+OK
+```
+
+That run was on macOS with Chrome installed. The tests cover content, pagination,
+bookmarks, theme geometry and validation, Markdown, text and image inputs, local,
+nested and embedded resources, refused and broken assets, warnings and output
+recovery. The web-page test serves a JavaScript page on localhost; it is skipped
+when no browser is installed, so a pass on such a machine covers one test fewer.
+Rendering and testing need no agent API and no outbound network. GitHub Actions does
+not run these tests, so run them before opening a pull request.
+
+### Update and remove
+
+Before updating, back up the skill folder and its virtual environment together.
+Install the new release, build a fresh environment from its requirements, and run the
+example and tests before switching over. To roll back, restore both. To uninstall,
+delete the skill folder, then its environment. Your sources, themes and PDFs are
+never touched.
+
+## License
+
+[MIT](LICENSE)

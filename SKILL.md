@@ -52,9 +52,9 @@ the project instructions and any design or token files they name. Read the proje
 own design system at `docs/design-system.md` even if no instructions point to it. Do
 not look for any other project design file. Then check the available skill catalog for
 a matching brand. Read only the relevant skill and its linked color, type and print
-references; do not crawl the filesystem or load unrelated skills. Optional matches
-include `lessly-design` (also `lessly:design` / Lessly plugin `design`) and
-`apliteni-design`; check the actual name and project/brand before using either.
+references; do not crawl the filesystem or load unrelated skills. A brand design
+skill applies only when its name and brand match the project; check both before
+using it.
 Prefer the system's print/light guidance over a dark web default. If an explicitly
 requested theme/system is unavailable or ambiguous, report that and ask for the
 missing source or choice; do not silently substitute Geist. If no relevant project
