@@ -8,7 +8,7 @@
 
 - **The skill reads a project's design system from `docs/design-system.md`.** It no longer looks for a design file at the repository root.
 
-- **Brand design skills are no longer named.** The skill still checks the skill catalog for a design skill matching the project's brand, but no longer lists specific private ones.
+- **The skill no longer looks for other skills.** It uses brand guidance only when it already has guidance matching the project's brand, and it names, loads and requires no other skill.
 
 ### Added
 
