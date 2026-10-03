@@ -14,8 +14,6 @@
 
 - **MIT licence.**
 
-- **CI.** GitHub Actions runs the test suite on Ubuntu for every pull request and push to `main`.
-
 ## 0.2.0 — 2026-10-01
 
 The skill is now `everything-to-pdf`: it converts Markdown, plain text or code, an image, local static HTML, or a web page.

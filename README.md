@@ -73,8 +73,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-test.txt
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-The web-page test is skipped when no Chrome or Chromium is installed. GitHub
-Actions runs the same suite on Ubuntu for every pull request.
+The web-page test is skipped when no Chrome or Chromium is installed. The tests
+run locally, not in CI.
 
 ## License
 
