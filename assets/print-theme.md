@@ -6,8 +6,7 @@ as color. Only the JSON controls the renderer; prose guides authoring.
 
 ## Source and print choices
 
-Colors come from the official [Vercel Geist colors](https://vercel.com/geist/colors)
-page's [stylesheet](https://vercel.com/vc-ap-b3331f/_next/static/immutable/chunks/328y7_b581oob.css),
+Colors come from the stylesheet of Vercel's official Geist colors page,
 checked 2026-09-08. The light selector `:root,:host,.dark .invert-theme,.dark-theme
 .invert-theme` defines the following `--ds-gray-*-value` sRGB HSL triplets, consumed
 by `hsla(var(...), 1)`. Hex values below round channels to the nearest 8-bit value;

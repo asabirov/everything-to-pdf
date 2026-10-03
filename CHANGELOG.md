@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 — Unreleased
+## 0.3.0 — 2026-10-03
 
 ### Changed
 
@@ -13,6 +13,8 @@
 ### Added
 
 - **MIT licence.**
+
+- **CI.** GitHub Actions runs the test suite on Ubuntu for every pull request and push to `main`.
 
 ## 0.2.0 — 2026-10-01
 

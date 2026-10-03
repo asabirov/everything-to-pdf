@@ -14,7 +14,7 @@ renders it. The company and figures are made up.*
 ## Install
 
 ```sh
-DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/everything-to-pdf/tree/v0.2.0 --skill everything-to-pdf --agent claude-code codex --global
+DO_NOT_TRACK=1 npx skills add https://github.com/asabirov/everything-to-pdf/tree/v0.3.0 --skill everything-to-pdf --agent claude-code codex --global
 ```
 
 The [skills CLI](https://github.com/vercel-labs/skills) needs Node.js, npm and Git.
@@ -55,19 +55,12 @@ The agent tells you which theme it used, the page count, and any warnings.
 
 ## What to know before you use it
 
-- **Local files and web pages print differently.** Markdown, text, code, images
-  and HTML files get the print theme and page numbers, and are rendered offline.
-  A web page is printed by Chrome as the site's own print layout: no theme, no
-  page numbers, and Chrome loads whatever the page asks for.
-- **Check page 1 of a web-page PDF.** A login screen or a bot check can come
-  back as a successful PDF of the wrong page. For a page behind a login, save it
-  from your browser and ask for a PDF of the saved file.
+- **A web page loses the theme.** Local files get the print theme and page
+  numbers. A web page comes out as the site's own print layout. For a page
+  behind a login, save it from your browser and ask for a PDF of the saved file.
 - **Your brand's look.** Name a theme or design system in your request, or keep
   one at `docs/design-system.md` in your project. Otherwise you get the plain
-  bundled theme. [SKILL.md](SKILL.md) has the full order.
-- **Images and stylesheets must sit beside the input.** A local file can only
-  use files in its own folder or below it. Move shared assets in rather than
-  linking out.
+  bundled theme.
 - **Not a sandbox.** For documents or URLs you do not trust, run it inside your
   own filesystem and network isolation.
 
@@ -80,8 +73,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-test.txt
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-The web-page test is skipped when no Chrome or Chromium is installed. No CI runs
-these tests, so run them before opening a pull request.
+The web-page test is skipped when no Chrome or Chromium is installed. GitHub
+Actions runs the same suite on Ubuntu for every pull request.
 
 ## License
 
