@@ -50,11 +50,9 @@ For local inputs, choose the theme before rendering in this order: **explicit us
 theme > relevant project design system > bundled Geist print fallback**. First, check
 the project instructions and any design or token files they name. Read the project's
 own design system at `docs/design-system.md` even if no instructions point to it. Do
-not look for any other project design file. Then check the available skill catalog for
-a matching brand. Read only the relevant skill and its linked color, type and print
-references; do not crawl the filesystem or load unrelated skills. Optional matches
-include `internal-tool-design` (also `internal-tool:design` / internal-tool plugin `design`) and
-`private-org-design`; check the actual name and project/brand before using either.
+not look for any other project design file. If brand guidance with colors, type and
+print rules is already available to you, use it only when its brand matches the
+project; do not crawl the filesystem to find one.
 Prefer the system's print/light guidance over a dark web default. If an explicitly
 requested theme/system is unavailable or ambiguous, report that and ask for the
 missing source or choice; do not silently substitute Geist. If no relevant project
@@ -66,8 +64,8 @@ its complete JSON schema, retain suitable print defaults for unspecified values,
 and record the source and print adaptations in the prose. Pass that file with
 `--theme`; reuse it on subsequent renders. A requested theme already in this schema
 can be passed directly. Discovery and adaptation are agent authoring work: the CLI
-only reads the supplied theme or bundled fallback, offline, without skill imports,
-font downloads or additional dependencies. Preserve existing source CSS.
+only reads the supplied theme or bundled fallback, offline, without font
+downloads or additional dependencies. Preserve existing source CSS.
 
 Use an existing external Python environment with [requirements.txt](requirements.txt)
 installed. First-run system dependencies and venv setup are in [README.md](README.md).

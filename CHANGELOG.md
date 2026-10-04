@@ -1,12 +1,18 @@
 # Changelog
 
-## 0.3.0 — Unreleased
+## 0.3.0 — 2026-10-03
 
 ### Changed
 
 - **The bundled print theme moved to `assets/print-theme.md`.** It was previously `assets/design-system.md`, which conflicted with the design system a project keeps at `docs/design-system.md`. Pass the renamed file, or your copy of it, with `--theme`.
 
 - **The skill reads a project's design system from `docs/design-system.md`.** It no longer looks for a design file at the repository root.
+
+- **The skill no longer looks for other skills.** It uses brand guidance only when it already has guidance matching the project's brand, and it names, loads and requires no other skill.
+
+### Added
+
+- **MIT licence.**
 
 ## 0.2.0 — 2026-10-01
 
