@@ -36,7 +36,7 @@ python3 -m venv ~/.local/share/everything-to-pdf/venv
 | Python 3.10 or later | Runs the renderer. |
 | [WeasyPrint](https://doc.courtbouillon.org/weasyprint/v69.0/first_steps.html#installation) 69.0 and its Pango and font libraries | Lays out every local input as print pages. pip installs WeasyPrint; the libraries come from your system (below). |
 | Markdown 3.11 (Python package) | Turns Markdown into HTML before layout. pip installs it. |
-| [Google Chrome](https://www.google.com/chrome/) or Chromium | Prints web pages. Only needed for URLs. |
+| Chrome or Chromium (on a Mac, Playwright's [Chrome headless shell](https://playwright.dev/docs/browsers#chromium-headless-shell)) | Prints web pages. Only needed for URLs. |
 
 System libraries for WeasyPrint:
 

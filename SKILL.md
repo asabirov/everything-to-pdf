@@ -70,7 +70,8 @@ downloads or additional dependencies. Preserve existing source CSS.
 Use an existing external Python environment with [requirements.txt](requirements.txt)
 installed. First-run system dependencies and venv setup are in [README.md](README.md).
 Use the README's default venv below, or substitute an existing compatible environment.
-Web pages additionally need Chrome or Chromium on `PATH`, or `--browser PATH`.
+Web pages additionally need Chrome or Chromium on `PATH`, or `--browser PATH`. On a Mac, the
+render uses Playwright's Chrome headless shell, never your own Google Chrome.
 From the skill directory:
 
 ```sh
