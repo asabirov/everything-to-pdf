@@ -29,7 +29,10 @@ KINDS = {'.html': 'html', '.htm': 'html',
          '.png': 'image', '.jpg': 'image', '.jpeg': 'image',
          '.gif': 'image', '.svg': 'image', '.webp': 'image'}
 BROWSERS = ('google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser')
-MAC_BROWSERS = ('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+# Never the person's own Google Chrome on a Mac: each start with a throwaway profile
+# leaves a key in its Keychain group, and every later start makes secd read them all.
+MAC_BROWSERS = ('~/Library/Caches/ms-playwright/chromium_headless_shell-*/'
+                'chrome-*/chrome-headless-shell',
                 '/Applications/Chromium.app/Contents/MacOS/Chromium')
 # Routine platform complaints a headless browser makes whether or not it succeeded.
 BROWSER_NOISE = re.compile(r'dbus|org\.freedesktop|gpu|vulkan|libva|fontconfig|'
@@ -313,6 +316,11 @@ def render(source, output, theme, kind):
             print(f'warning: {diagnostics.count - 6} more renderer diagnostics suppressed', file=sys.stderr)
 
 
+def playwright_version(path):
+    match = re.search(r'chromium_headless_shell-(\d+)', str(path))
+    return int(match.group(1)) if match else 0
+
+
 def browser_binary(explicit):
     if explicit:
         if not os.access(explicit, os.X_OK) or not Path(explicit).is_file():
@@ -322,10 +330,13 @@ def browser_binary(explicit):
         found = shutil.which(name)
         if found:
             return found
-    for path in MAC_BROWSERS:
-        if os.access(path, os.X_OK):
-            return path
-    raise RenderError('no Chrome or Chromium on PATH; install one or pass --browser')
+    for pattern in MAC_BROWSERS:
+        # The newest Playwright download first.
+        for path in sorted(Path('/').glob(str(Path(pattern).expanduser())[1:]),
+                           key=playwright_version, reverse=True):
+            if os.access(path, os.X_OK):
+                return str(path)
+    raise RenderError('no Chrome or Chromium found; on a Mac, run npx playwright install chromium-headless-shell, or pass --browser')
 
 
 def browser_reason(output):

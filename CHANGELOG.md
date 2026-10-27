@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **On a Mac, web pages print with Playwright's Chrome headless shell, never your own Google Chrome.** Each start of Google Chrome with a throwaway profile left a key in its Keychain group, and each later start made the Mac's `secd` service read all of them. Install the shell with `npx playwright install chromium-headless-shell`, or pass `--browser`.
+
 ## 0.3.0 — 2026-10-03
 
 ### Changed
